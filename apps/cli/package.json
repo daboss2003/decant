@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "gen-sample": "tsx src/gen-sample.ts",
-    "extract": "tsx src/run.ts"
+    "extract": "tsx src/run.ts",
+    "eval": "tsx src/eval.ts"
   },
   "dependencies": {
     "@decant/core": "workspace:*",
+    "@decant/eval": "workspace:*",
     "@decant/gemini": "workspace:*",
     "@decant/schemas": "workspace:*"
   },

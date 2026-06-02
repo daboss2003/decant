@@ -20,6 +20,9 @@ importers:
       '@decant/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@decant/eval':
+        specifier: workspace:*
+        version: link:../../packages/eval
       '@decant/gemini':
         specifier: workspace:*
         version: link:../../packages/gemini
@@ -64,6 +67,12 @@ importers:
       prisma:
         specifier: ^6.19.3
         version: 6.19.3(typescript@5.9.3)
+
+  packages/eval:
+    dependencies:
+      '@decant/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/gemini:
     dependencies:
