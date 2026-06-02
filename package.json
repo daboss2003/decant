@@ -3,9 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p packages/schemas/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit"
+    "typecheck": "tsc -p packages/schemas/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.8"
   }
 }
