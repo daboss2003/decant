@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@decant/schemas": "workspace:*",
+    "date-fns": "^4.4.0",
     "zod": "^4.3.5"
   }
 }

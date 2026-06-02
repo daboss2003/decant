@@ -107,7 +107,7 @@ export const receiptRules: DomainRule<ReceiptCanonical>[] = [
   // [SIGNAL] total positive
   (d) => signal('total_positive', d.totalMinor === null || d.totalMinor > 0, ['totalMinor']),
 
-  // [SIGNAL] transaction date resolved.
-  // TODO(M0): promote to GATE once date-fns NG day-first parsing replaces the placeholder.
-  (d) => signal('transaction_date_present', d.transactionDate !== null, ['transactionDate'], 'date unparsed (placeholder)'),
+  // [GATE] transaction date present + parseable (date-fns NG day-first, §4).
+  (d) =>
+    gate('transaction_date_present', d.transactionDate !== null, ['transactionDate'], 'date missing or unparseable → review'),
 ];
