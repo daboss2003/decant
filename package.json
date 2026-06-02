@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p packages/schemas/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit",
+    "typecheck": "tsc -p packages/schemas/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/gemini/tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {

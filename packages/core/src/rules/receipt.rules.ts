@@ -56,23 +56,26 @@ function normalizeCurrency(raw: string | null): string | null {
  * the pipeline. Coercion is defensive; correctness is enforced by the rules.
  */
 export function normalizeReceipt(x: ReceiptExtraction): ReceiptCanonical {
+  // Optional chaining throughout: a malformed/partial model response (e.g. a
+  // failed structured-output parse) must produce nulls, never crash.
+  const lines = Array.isArray(x?.lineItems) ? x.lineItems : [];
   return {
-    merchantName: x.merchantName.value,
-    merchantTaxId: x.merchantTaxId.value,
-    transactionDate: normalizeDate(x.transactionDate.value),
-    currency: normalizeCurrency(x.currency.value),
-    lineItems: x.lineItems.map((li) => ({
-      description: li.description.value,
-      qty: li.qty.value,
-      unitPriceMinor: toMinor(li.unitPrice.value),
-      lineTotalMinor: toMinor(li.lineTotal.value),
+    merchantName: x?.merchantName?.value ?? null,
+    merchantTaxId: x?.merchantTaxId?.value ?? null,
+    transactionDate: normalizeDate(x?.transactionDate?.value ?? null),
+    currency: normalizeCurrency(x?.currency?.value ?? null),
+    lineItems: lines.map((li) => ({
+      description: li?.description?.value ?? null,
+      qty: li?.qty?.value ?? null,
+      unitPriceMinor: toMinor(li?.unitPrice?.value ?? null),
+      lineTotalMinor: toMinor(li?.lineTotal?.value ?? null),
     })),
-    subtotalMinor: toMinor(x.subtotal.value),
-    taxMinor: toMinor(x.tax.value),
-    tipMinor: toMinor(x.tip.value),
-    discountMinor: toMinor(x.discount.value),
-    totalMinor: toMinor(x.total.value),
-    paymentMethod: x.paymentMethod.value,
+    subtotalMinor: toMinor(x?.subtotal?.value ?? null),
+    taxMinor: toMinor(x?.tax?.value ?? null),
+    tipMinor: toMinor(x?.tip?.value ?? null),
+    discountMinor: toMinor(x?.discount?.value ?? null),
+    totalMinor: toMinor(x?.total?.value ?? null),
+    paymentMethod: x?.paymentMethod?.value ?? null,
   };
 }
 
