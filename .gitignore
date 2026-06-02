@@ -31,6 +31,9 @@ storage/
 # with `git add -f` if you want it in the repo / README.
 reports/
 
+# Generated demo samples (regenerate via `pnpm --filter @decant/cli run gen-sample`)
+apps/cli/sample-receipt*.png
+
 # Python calibration sidecar
 __pycache__/
 *.pyc

@@ -19,6 +19,22 @@ export interface GeminiClassifyConfig {
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
+/**
+ * LENIENT parse schema for the model RESPONSE: confidence has no [0,1] bound
+ * here because Gemini does not enforce `minimum`/`maximum` (plan §note in
+ * classify.ts) — a model returning 1.5 must be clamped, not rejected. The strict
+ * `ClassifyOutput` is still what we SEND as the responseJsonSchema.
+ */
+const LenientClassifyOutput = z.object({
+  pages: z.array(
+    z.object({
+      pageIndex: z.number().int(),
+      docType: z.string(),
+      confidence: z.number(),
+    }),
+  ),
+});
+
 export class GeminiClassifyService implements ClassifyService {
   private readonly model: string;
   private readonly schema: unknown;
@@ -59,7 +75,7 @@ export class GeminiClassifyService implements ClassifyService {
     } catch {
       return fallback();
     }
-    const parsed = ClassifyOutput.safeParse(raw);
+    const parsed = LenientClassifyOutput.safeParse(raw);
     if (!parsed.success) return fallback();
 
     const byIndex = new Map(parsed.data.pages.map((p) => [p.pageIndex, p]));

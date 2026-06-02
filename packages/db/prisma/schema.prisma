@@ -1,0 +1,74 @@
+// Decant persistence (plan §2 data model). SQLite for dev → Postgres for prod
+// (swap the datasource provider + url). Json columns hold raw signals / payloads
+// so nothing about a run is lost (calibration can be re-run offline).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Upload {
+  id          String       @id @default(cuid())
+  sourceType  String // photo | pdf
+  nPages      Int
+  createdAt   DateTime     @default(now())
+  documents   Document[]
+  auditEvents AuditEvent[]
+}
+
+model Document {
+  id          String       @id @default(cuid())
+  uploadId    String
+  upload      Upload       @relation(fields: [uploadId], references: [id])
+  docType     String
+  mode        String // typed | generic
+  pageStart   Int
+  pageEnd     Int
+  reclassify  Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  fields      Field[]
+  auditEvents AuditEvent[]
+}
+
+model Field {
+  id          String       @id @default(cuid())
+  documentId  String
+  document    Document     @relation(fields: [documentId], references: [id])
+  fieldPath   String
+  value       Json?
+  confidence  Float
+  status      String // auto_approved | needs_review | corrected | rejected
+  signals     Json?
+  corrections Correction[]
+
+  @@unique([documentId, fieldPath])
+}
+
+model Correction {
+  id          String   @id @default(cuid())
+  fieldId     String
+  field       Field    @relation(fields: [fieldId], references: [id])
+  oldValue    Json?
+  newValue    Json?
+  reason      String?
+  correctedBy String
+  correctedAt DateTime @default(now())
+}
+
+// Append-only audit trail (the trustworthiness artifact, plan §2).
+model AuditEvent {
+  id         String    @id @default(cuid())
+  uploadId   String?
+  upload     Upload?   @relation(fields: [uploadId], references: [id])
+  documentId String?
+  document   Document? @relation(fields: [documentId], references: [id])
+  fieldId    String?
+  type       String // extracted | validated | routed | corrected | approved | flagged | emitted
+  actor      String // system | model | human:<id>
+  payload    Json?
+  timestamp  DateTime  @default(now())
+}
