@@ -1,0 +1,51 @@
+# Planning doc (kept local — remove this line if you want it tracked)
+plan.md
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output / caches
+dist/
+build/
+out/
+.next/
+.turbo/
+*.tsbuildinfo
+
+# Secrets & env (NEVER commit — holds GEMINI_API_KEY etc.)
+.env
+.env.*
+!.env.example
+
+# Local data — PII-sensitive (uploaded financial docs, blobs, dev DB)
+data/
+uploads/
+storage/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Eval run artifacts (generated). Commit a curated reliability diagram by hand
+# with `git add -f` if you want it in the repo / README.
+reports/
+
+# Python calibration sidecar
+__pycache__/
+*.pyc
+.venv/
+.python-version
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
