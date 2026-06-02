@@ -4,3 +4,4 @@ export * from './classify';
 export * from './generic';
 export * from './correction';
 export * from './doc-types/receipt';
+export * from './doc-types/bank-statement';

@@ -1,5 +1,5 @@
 import type { RoutingService, FieldConfidence, ValidationOutcome, FieldStatus } from '../services';
-import { fieldKey } from '../field-key';
+import { fieldMatches, normPath } from '../field-match';
 
 /**
  * Threshold routing — plan §2 stage 7 / §6.
@@ -31,21 +31,18 @@ export class ThresholdRoutingService implements RoutingService {
     validation: ValidationOutcome,
     mode: 'typed' | 'generic',
   ): Map<string, FieldStatus> {
-    const failedGateKeys = new Set<string>();
-    for (const r of validation.results) {
-      if (r.severity === 'GATE' && !r.passed) {
-        for (const f of r.fields) failedGateKeys.add(fieldKey(f));
-      }
-    }
+    const failedGateFields = validation.results
+      .filter((r) => r.severity === 'GATE' && !r.passed)
+      .flatMap((r) => r.fields);
 
     const out = new Map<string, FieldStatus>();
     for (const f of fields) {
-      const key = fieldKey(f.fieldPath);
-      const threshold = this.config.thresholds?.[key] ?? this.config.defaultThreshold;
+      const threshold = this.config.thresholds?.[normPath(f.fieldPath)] ?? this.config.defaultThreshold;
+      const gateFailed = failedGateFields.some((rf) => fieldMatches(rf, f.fieldPath));
 
       let status: FieldStatus;
       if (mode === 'generic' || validation.reclassify) status = 'needs_review';
-      else if (failedGateKeys.has(key)) status = 'needs_review';
+      else if (gateFailed) status = 'needs_review';
       else if (f.confidence >= threshold) status = 'auto_approved';
       else status = 'needs_review';
 

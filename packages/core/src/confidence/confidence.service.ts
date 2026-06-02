@@ -1,6 +1,6 @@
 import type { ConfidenceService, ExtractedDocument, ValidationOutcome, FieldConfidence } from '../services';
 import type { RuleResult } from '../registry';
-import { fieldKey } from '../field-key';
+import { fieldMatches } from '../field-match';
 import { flattenExtraction } from './flatten';
 
 /**
@@ -40,22 +40,19 @@ interface KeyEffects {
   signalFailed: boolean;
 }
 
-function aggregateEffects(results: RuleResult[]): Map<string, KeyEffects> {
-  const m = new Map<string, KeyEffects>();
+/** Which rule outcomes implicate this field (path-prefix match → per-row precision). */
+function effectsForField(selfPath: string, results: RuleResult[]): KeyEffects {
+  const e: KeyEffects = { gateFailed: false, gatePassed: false, signalFailed: false };
   for (const r of results) {
-    for (const f of r.fields) {
-      const k = fieldKey(f);
-      const e = m.get(k) ?? { gateFailed: false, gatePassed: false, signalFailed: false };
-      if (r.severity === 'GATE') {
-        if (r.passed) e.gatePassed = true;
-        else e.gateFailed = true;
-      } else if (!r.passed) {
-        e.signalFailed = true;
-      }
-      m.set(k, e);
+    if (!r.fields.some((f) => fieldMatches(f, selfPath))) continue;
+    if (r.severity === 'GATE') {
+      if (r.passed) e.gatePassed = true;
+      else e.gateFailed = true;
+    } else if (!r.passed) {
+      e.signalFailed = true;
     }
   }
-  return m;
+  return e;
 }
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
@@ -69,15 +66,14 @@ export class HeuristicConfidenceService implements ConfidenceService {
     classifyConfidence: number,
   ): Promise<FieldConfidence[]> {
     const w = this.weights;
-    const effects = aggregateEffects(validation.results);
 
     return flattenExtraction(doc.raw).map((f) => {
-      const eff = effects.get(fieldKey(f.fieldPath));
+      const eff = effectsForField(f.fieldPath, validation.results);
       let c = f.modelConfidence;
 
-      if (eff?.gateFailed) c = Math.min(c, w.gateFailFloor);
-      else if (eff?.gatePassed) c = Math.max(c, w.gatePassBoost);
-      if (eff?.signalFailed) c *= w.signalFailFactor;
+      if (eff.gateFailed) c = Math.min(c, w.gateFailFloor);
+      else if (eff.gatePassed) c = Math.max(c, w.gatePassBoost);
+      if (eff.signalFailed) c *= w.signalFailFactor;
 
       c *= classifyConfidence;
       if (doc.mode === 'generic') c = Math.min(c, w.genericMaxConfidence);
@@ -88,9 +84,9 @@ export class HeuristicConfidenceService implements ConfidenceService {
         signals: {
           modelConfidence: f.modelConfidence,
           classifyConfidence,
-          gateFailed: eff?.gateFailed ?? false,
-          gatePassed: eff?.gatePassed ?? false,
-          signalFailed: eff?.signalFailed ?? false,
+          gateFailed: eff.gateFailed,
+          gatePassed: eff.gatePassed,
+          signalFailed: eff.signalFailed,
           generic: doc.mode === 'generic',
         },
       };
