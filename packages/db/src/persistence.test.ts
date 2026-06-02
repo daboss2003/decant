@@ -80,4 +80,25 @@ describe('persistence', () => {
     const audits = await prisma.auditEvent.findMany({ where: { fieldId: field?.id, type: 'corrected' } });
     expect(audits.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('a correction to a numeric field STAYS a number (no type corruption)', async () => {
+    const uploadId = await savePipelineResult(prisma, { sourceType: 'photo', nPages: 1, result: makeResult() });
+    const doc = await prisma.document.findFirstOrThrow({ where: { uploadId } });
+
+    const review = new PrismaReviewService(prisma);
+    // human types "2,000" as a string; the stored value must remain a JS number
+    await review.applyCorrection({
+      documentId: doc.id,
+      fieldPath: 'total',
+      action: 'accept',
+      correctedValue: '2,000',
+      actor: 'tester',
+    });
+
+    const field = await prisma.field.findUnique({
+      where: { documentId_fieldPath: { documentId: doc.id, fieldPath: 'total' } },
+    });
+    expect(field?.value).toBe(2000);
+    expect(typeof field?.value).toBe('number');
+  });
 });

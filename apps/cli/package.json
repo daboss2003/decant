@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@decant/core": "workspace:*",
+    "@decant/db": "workspace:*",
     "@decant/eval": "workspace:*",
     "@decant/gemini": "workspace:*",
     "@decant/schemas": "workspace:*"

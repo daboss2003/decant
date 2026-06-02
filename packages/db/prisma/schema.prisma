@@ -15,6 +15,7 @@ model Upload {
   id          String       @id @default(cuid())
   sourceType  String // photo | pdf
   nPages      Int
+  imageRef    String? // path/URL to the page image (for the review UI)
   createdAt   DateTime     @default(now())
   documents   Document[]
   auditEvents AuditEvent[]

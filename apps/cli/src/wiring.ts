@@ -1,5 +1,6 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import sharp from 'sharp';
 import {
   DocumentPipeline,
   RuleValidationService,
@@ -7,8 +8,10 @@ import {
   ThresholdRoutingService,
   registry,
   KNOWN_DOC_TYPES,
+  type PipelineResult,
 } from '@decant/core';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService, type PageImageStore } from '@decant/gemini';
+import { createPrismaClient, savePipelineResult } from '@decant/db';
 
 /** Minimal .env loader — walks up from cwd looking for .env / packages/gemini/.env. */
 export function loadDotenv(): void {
@@ -53,4 +56,31 @@ export function buildPipeline(apiKey: string, store: PageImageStore): DocumentPi
     },
     { knownTypes: KNOWN_DOC_TYPES, minClassifyConfidence: 0.5 },
   );
+}
+
+/**
+ * Close the loop: persist a pipeline result into the same dev DB the review UI
+ * reads, and copy the first page image into the web app's public dir so it shows
+ * beside the flagged fields. Returns the new document id for the review URL.
+ */
+export async function saveToReviewQueue(
+  result: PipelineResult,
+  firstImagePath: string,
+  nPages: number,
+): Promise<{ uploadId: string; documentId: string | null }> {
+  const dbUrl = `file:${resolve(process.cwd(), '../../packages/db/prisma/dev.db')}`;
+  const prisma = createPrismaClient(dbUrl);
+  try {
+    const uploadId = await savePipelineResult(prisma, { sourceType: 'photo', nPages, result });
+
+    const uploadsDir = resolve(process.cwd(), '../../apps/web/public/uploads');
+    mkdirSync(uploadsDir, { recursive: true });
+    await sharp(firstImagePath).png().toFile(resolve(uploadsDir, `${uploadId}.png`)); // images only (PDFs would need rasterizing)
+    await prisma.upload.update({ where: { id: uploadId }, data: { imageRef: `/uploads/${uploadId}.png` } });
+
+    const firstDoc = await prisma.document.findFirst({ where: { uploadId }, orderBy: { pageStart: 'asc' } });
+    return { uploadId, documentId: firstDoc?.id ?? null };
+  } finally {
+    await prisma.$disconnect();
+  }
 }

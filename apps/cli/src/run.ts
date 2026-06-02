@@ -1,13 +1,15 @@
 import { resolve } from 'node:path';
-import { requireApiKey, buildPipeline } from './wiring';
+import { requireApiKey, buildPipeline, saveToReviewQueue } from './wiring';
 import { FsPageImageStore } from './fs-image-store';
 
 async function main(): Promise<void> {
   const apiKey = requireApiKey();
 
-  const files = process.argv.slice(2).map((f) => resolve(f));
+  const argv = process.argv.slice(2);
+  const save = argv.includes('--save');
+  const files = argv.filter((a) => a !== '--save').map((f) => resolve(f));
   if (files.length === 0) {
-    console.error('usage: tsx src/run.ts <image-or-pdf> [more pages…]');
+    console.error('usage: tsx src/run.ts <image-or-pdf> [more pages…] [--save]');
     process.exit(1);
   }
 
@@ -31,6 +33,15 @@ async function main(): Promise<void> {
     const failed = doc.ruleResults.filter((r) => !r.passed);
     if (failed.length) console.log(`\n  rules failed: ${failed.map((r) => `${r.rule}[${r.severity}]`).join(', ')}`);
     console.log('');
+  }
+
+  if (save && files[0]) {
+    const { documentId } = await saveToReviewQueue(result, files[0], files.length);
+    console.log(
+      documentId
+        ? `Saved to review queue → http://localhost:3000/documents/${documentId}`
+        : 'Saved to review queue (no document produced).',
+    );
   }
 }
 

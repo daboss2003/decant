@@ -1,0 +1,27 @@
+{
+  "name": "@decant/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "seed": "tsx scripts/seed.ts"
+  },
+  "dependencies": {
+    "@decant/core": "workspace:*",
+    "@decant/db": "workspace:*",
+    "@decant/schemas": "workspace:*",
+    "next": "^16.2.7",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.16",
+    "@types/react-dom": "^19.2.3",
+    "sharp": "^0.34.5",
+    "tsx": "^4.22.4"
+  }
+}
