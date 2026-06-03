@@ -7,9 +7,10 @@ async function main(): Promise<void> {
 
   const argv = process.argv.slice(2);
   const save = argv.includes('--save');
-  const files = argv.filter((a) => a !== '--save').map((f) => resolve(f));
+  const ocr = argv.includes('--ocr');
+  const files = argv.filter((a) => !a.startsWith('--')).map((f) => resolve(f));
   if (files.length === 0) {
-    console.error('usage: tsx src/run.ts <image-or-pdf> [more pages…] [--save]');
+    console.error('usage: tsx src/run.ts <image-or-pdf> [more pages…] [--save] [--ocr]');
     process.exit(1);
   }
 
@@ -17,14 +18,14 @@ async function main(): Promise<void> {
   const pages = files.map((f, i) => ({ pageIndex: i, imageRef: f }));
   const store = new FsPageImageStore(new Map([[uploadId, files]]));
   const calibration = loadCalibration();
-  const pipeline = buildPipeline(apiKey, store, calibration);
+  const pipeline = buildPipeline(apiKey, store, calibration, { ocr });
 
   const calLabel = !calibration
     ? 'uncalibrated'
     : 'method' in calibration
       ? `calibrated: ${calibration.method}`
       : 'calibrated: per-type';
-  console.error(`Processing ${files.length} page(s) through the pipeline (${calLabel})…\n`);
+  console.error(`Processing ${files.length} page(s) through the pipeline (${calLabel}${ocr ? ', OCR provenance' : ''})…\n`);
   const result = await pipeline.process(uploadId, pages);
 
   for (const doc of result.documents) {

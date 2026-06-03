@@ -23,6 +23,7 @@ A document classifies to a **registered type** (receipt/invoice, bank statement,
 | `packages/schemas` | Zod single source of truth (drives Gemini structured output, validation, types, MCP/elicitation) |
 | `packages/core` | Transport-agnostic domain core: registry, segmentation, rules, confidence, routing, the pipeline orchestrator |
 | `packages/gemini` | `@google/genai`-backed Classify + Extract services (the SDK behind a mockable interface) |
+| `packages/ocr` | tesseract.js `OcrProvider` → per-field bbox provenance (fuzzy-aligned to each value, independent of the model's claim) |
 | `packages/db` | Prisma + SQLite persistence + the audit-trail-writing `ReviewService` |
 | `packages/eval` | Gold scoring + success metrics (field accuracy, reliability/ECE/Brier, safe-failure rate, threshold sweep) |
 | `apps/cli` | Run extraction / eval against real Gemini |
@@ -48,6 +49,7 @@ pnpm run typecheck # all packages
 pnpm --filter @decant/cli run gen-sample              # writes a synthetic receipt PNG
 pnpm --filter @decant/cli run extract sample-receipt.png
 pnpm --filter @decant/cli run extract sample-receipt.png --save   # also push it into the review queue
+pnpm --filter @decant/cli run extract sample-receipt.png --save --ocr   # + bbox provenance via Tesseract
 
 # 2. Eval over the gold set (real Gemini) — accuracy, ECE, safe-failure, threshold sweep
 pnpm --filter @decant/cli run eval
@@ -90,9 +92,9 @@ The marquee: when `review_document` hits a flagged field it **elicits** a struct
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements), persistence + audit trail, the eval harness, **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI, and the **MCP server + client** (elicitation-based review).
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness, **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), and the **MCP server + client** (elicitation-based review).
 
-**Roadmap:** a larger labeled gold set (for a statistically meaningful per-type diagram) · OCR-aligned bbox provenance · CAC document type · auth · MCP client-role enrichment (registry/FX lookups).
+**Roadmap:** a larger labeled gold set (for a statistically meaningful per-type diagram) · auth · MCP client-role enrichment (registry/FX lookups).
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 

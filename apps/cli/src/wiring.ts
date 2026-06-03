@@ -13,6 +13,7 @@ import {
   type CalibrationSet,
 } from '@decant/core';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService, type PageImageStore } from '@decant/gemini';
+import { TesseractOcrProvider } from '@decant/ocr';
 import { createPrismaClient, savePipelineResult } from '@decant/db';
 
 /** Minimal .env loader — walks up from cwd looking for .env / packages/gemini/.env. */
@@ -68,6 +69,7 @@ export function buildPipeline(
   apiKey: string,
   store: PageImageStore,
   calibration?: Calibration | CalibrationSet,
+  opts: { ocr?: boolean } = {},
 ): DocumentPipeline {
   const client = new GoogleGenAIClient(apiKey);
   return new DocumentPipeline(
@@ -77,6 +79,9 @@ export function buildPipeline(
       validation: new RuleValidationService(registry),
       confidence: new HeuristicConfidenceService({ calibration }),
       routing: new ThresholdRoutingService(),
+      // PageImageStore is structurally an ImageBytesLoader, so the same store
+      // that feeds Gemini also feeds OCR (off by default — Tesseract is heavy).
+      ocr: opts.ocr ? new TesseractOcrProvider(store) : undefined,
     },
     { knownTypes: KNOWN_DOC_TYPES, minClassifyConfidence: 0.5 },
   );

@@ -13,6 +13,7 @@
     "@decant/db": "workspace:*",
     "@decant/eval": "workspace:*",
     "@decant/gemini": "workspace:*",
+    "@decant/ocr": "workspace:*",
     "@decant/schemas": "workspace:*"
   },
   "devDependencies": {

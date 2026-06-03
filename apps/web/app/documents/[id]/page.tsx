@@ -6,6 +6,17 @@ export const dynamic = 'force-dynamic';
 
 type Signals = Record<string, number | boolean> | null;
 
+type Provenance = { pageIndex: number; bbox: { x: number; y: number; w: number; h: number } };
+
+/** Narrow the Json `provenance` column to a usable bbox (or null). */
+function asProvenance(v: unknown): Provenance | null {
+  if (v && typeof v === 'object' && 'bbox' in v) {
+    const p = v as Provenance;
+    if (p.bbox && typeof p.bbox.x === 'number' && typeof p.bbox.w === 'number') return p;
+  }
+  return null;
+}
+
 function whyFlagged(signals: Signals): string {
   // NOTE: keys mirror what the confidence pipeline emits today (see @decant/core).
   if (signals && typeof signals === 'object') {
@@ -41,6 +52,12 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
 
   const auto = doc.fields.filter((f) => f.status === 'auto_approved').length;
 
+  // Fields we can point to on the scan, numbered so each box matches its row.
+  const located = doc.fields
+    .map((f) => ({ f, prov: asProvenance(f.provenance) }))
+    .filter((x): x is { f: (typeof doc.fields)[number]; prov: Provenance } => x.prov !== null);
+  const numberOf = new Map(located.map((x, i) => [x.f.id, i + 1]));
+
   return (
     <main>
       <p><Link href="/">← queue</Link></p>
@@ -51,17 +68,35 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
       </p>
 
       <div className="review">
-        {/* TODO(provenance): overlay per-field bounding boxes on this image once
-            OCR-aligned provenance bboxes exist (plan §2/§8). Container is
-            relatively positioned so absolute overlay divs can drop in later. */}
-        <div style={{ position: 'relative' }}>
+        {/* OCR-aligned provenance: each box points to where on the scan a value
+            was found; the number matches the field row on the right (plan §2/§5). */}
+        <div className="scan">
           {doc.upload.imageRef ? (
-            // eslint-disable-next-line @next/next/no-img-element -- local raster scan, not next/image
-            <img
-              className="doc-image"
-              src={doc.upload.imageRef}
-              alt={`${doc.docType} scan, pages ${doc.pageStart}-${doc.pageEnd}`}
-            />
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- local raster scan, not next/image */}
+              <img
+                className="doc-image"
+                src={doc.upload.imageRef}
+                alt={`${doc.docType} scan, pages ${doc.pageStart}-${doc.pageEnd}`}
+              />
+              {located
+                .filter(({ prov }) => prov.pageIndex === doc.pageStart)
+                .map(({ f, prov }) => (
+                  <div
+                    key={f.id}
+                    className={`bbox ${f.status === 'auto_approved' ? 'ok' : 'review'}`}
+                    style={{
+                      left: `${prov.bbox.x * 100}%`,
+                      top: `${prov.bbox.y * 100}%`,
+                      width: `${prov.bbox.w * 100}%`,
+                      height: `${prov.bbox.h * 100}%`,
+                    }}
+                    title={`${f.fieldPath} — ${displayValue(f.value)}`}
+                  >
+                    <span className="bbox-num">{numberOf.get(f.id)}</span>
+                  </div>
+                ))}
+            </>
           ) : (
             <div className="card muted">No page image stored for this upload.</div>
           )}
@@ -75,7 +110,10 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             return (
               <div key={f.id} className={`field${flagged ? ' flagged' : ''}`}>
                 <div className="field-head">
-                  <span className="field-name">{f.fieldPath}</span>
+                  <span className="field-name">
+                    {f.fieldPath}
+                    {numberOf.has(f.id) && <span className="loc" title="located on the scan">{numberOf.get(f.id)}</span>}
+                  </span>
                   <span className={`pill ${pill}`}>{f.status.replace('_', ' ')}</span>
                 </div>
                 <div>
