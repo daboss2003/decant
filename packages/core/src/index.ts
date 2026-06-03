@@ -15,5 +15,7 @@ export * from './rules/normalize';
 export * from './rules/rule-helpers';
 export * from './rules/receipt.rules';
 export * from './rules/bank-statement.rules';
+export * from './rules/cac.rules';
 export * from './doc-types/receipt.entry';
 export * from './doc-types/bank-statement.entry';
+export * from './doc-types/cac.entry';

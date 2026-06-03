@@ -90,11 +90,11 @@ The marquee: when `review_document` hits a flagged field it **elicits** a struct
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements), persistence + audit trail, the eval harness, **calibration (measure + fit)**, the review UI, and the **MCP server + client** (elicitation-based review).
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements), persistence + audit trail, the eval harness, **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI, and the **MCP server + client** (elicitation-based review).
 
-**Roadmap:** wire calibrated confidence into live routing · OCR-aligned bbox provenance · CAC document type · auth · MCP client-role enrichment (registry/FX lookups).
+**Roadmap:** a larger labeled gold set (for a statistically meaningful per-type diagram) · OCR-aligned bbox provenance · CAC document type · auth · MCP client-role enrichment (registry/FX lookups).
 
-> Calibration is **fitted offline** and applied in TS (`applyCalibration`); the next step is loading `calibration.json` into the live `ConfidenceService` so routing uses calibrated probabilities (and growing the gold set for a statistically meaningful diagram). The full design lives in `plan.md`.
+> The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 
 ## License
 

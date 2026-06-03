@@ -20,6 +20,26 @@ export interface Calibration {
   isotonic?: IsotonicParams | null;
 }
 
+/**
+ * A set of calibrators (plan §3.3 — calibrate per doc type when there's enough
+ * data, else fall back to a global one). The sidecar emits this shape; the
+ * service resolves the right calibrator by the document's type.
+ */
+export interface CalibrationSet {
+  default?: Calibration | null;
+  byType?: Record<string, Calibration> | null;
+}
+
+/** Pick the calibrator for a doc type: a per-type one if present, else the default. */
+export function resolveCalibration(
+  c: Calibration | CalibrationSet | undefined,
+  docType: string,
+): Calibration | undefined {
+  if (!c) return undefined;
+  if ('method' in c) return c; // a single bare calibrator applies to everything
+  return c.byType?.[docType] ?? c.default ?? undefined;
+}
+
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
 const sigmoid = (z: number): number => 1 / (1 + Math.exp(-z));
 

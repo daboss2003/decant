@@ -1,6 +1,7 @@
 import type { ConfidenceService, ExtractedDocument, ValidationOutcome, FieldConfidence } from '../services';
 import type { RuleResult } from '../registry';
 import { fieldMatches } from '../field-match';
+import { applyCalibration, resolveCalibration, type Calibration, type CalibrationSet } from '../calibration';
 import { flattenExtraction } from './flatten';
 
 /**
@@ -57,8 +58,24 @@ function effectsForField(selfPath: string, results: RuleResult[]): KeyEffects {
 
 const clamp01 = (x: number): number => Math.max(0, Math.min(1, x));
 
+export interface ConfidenceOptions {
+  weights?: ConfidenceWeights;
+  /**
+   * Fitted calibrator(s) from the sidecar. A bare `Calibration` applies to every
+   * type; a `CalibrationSet` resolves a per-doc-type calibrator (else its default).
+   * When set, the fused RAW score is mapped to a calibrated probability.
+   */
+  calibration?: Calibration | CalibrationSet;
+}
+
 export class HeuristicConfidenceService implements ConfidenceService {
-  constructor(private readonly weights: ConfidenceWeights = DEFAULT_CONFIDENCE_WEIGHTS) {}
+  private readonly weights: ConfidenceWeights;
+  private readonly calibration?: Calibration | CalibrationSet;
+
+  constructor(opts: ConfidenceOptions = {}) {
+    this.weights = opts.weights ?? DEFAULT_CONFIDENCE_WEIGHTS;
+    this.calibration = opts.calibration;
+  }
 
   async score(
     doc: ExtractedDocument,
@@ -66,6 +83,8 @@ export class HeuristicConfidenceService implements ConfidenceService {
     classifyConfidence: number,
   ): Promise<FieldConfidence[]> {
     const w = this.weights;
+    // Resolve the calibrator for THIS document's type (per-type, else default).
+    const cal = resolveCalibration(this.calibration, doc.docType);
 
     return flattenExtraction(doc.raw).map((f) => {
       const eff = effectsForField(f.fieldPath, validation.results);
@@ -78,9 +97,13 @@ export class HeuristicConfidenceService implements ConfidenceService {
       c *= classifyConfidence;
       if (doc.mode === 'generic') c = Math.min(c, w.genericMaxConfidence);
 
+      const raw = clamp01(c);
+      // Map the fused RAW score → calibrated probability when a calibrator is loaded (§3.3).
+      const confidence = cal ? applyCalibration(cal, raw) : raw;
+
       return {
         fieldPath: f.fieldPath,
-        confidence: clamp01(c),
+        confidence,
         signals: {
           modelConfidence: f.modelConfidence,
           classifyConfidence,
@@ -88,6 +111,8 @@ export class HeuristicConfidenceService implements ConfidenceService {
           gatePassed: eff.gatePassed,
           signalFailed: eff.signalFailed,
           generic: doc.mode === 'generic',
+          rawConfidence: raw,
+          calibrated: Boolean(cal),
         },
       };
     });

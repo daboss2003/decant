@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { applyCalibration, type Calibration } from './calibration';
+import { applyCalibration, resolveCalibration, type Calibration, type CalibrationSet } from './calibration';
 import fixture from './calibration.fixture.json';
 
 describe('applyCalibration', () => {
@@ -27,6 +27,18 @@ describe('applyCalibration', () => {
   it('falls back to identity (clamped) when params are missing', () => {
     expect(applyCalibration({ method: 'isotonic' }, 0.7)).toBeCloseTo(0.7);
     expect(applyCalibration({ method: 'platt' }, 1.5)).toBe(1); // clamped
+  });
+
+  it('resolveCalibration picks per-type, falls back to default, and passes bare calibrators through', () => {
+    const platt: Calibration = { method: 'platt', platt: { a: 1, b: 0 } };
+    const iso: Calibration = { method: 'isotonic', isotonic: { x: [0, 1], y: [0, 1] } };
+    const set: CalibrationSet = { byType: { receipt: platt }, default: iso };
+
+    expect(resolveCalibration(set, 'receipt')).toBe(platt); // per-type
+    expect(resolveCalibration(set, 'bank_statement')).toBe(iso); // falls back to default
+    expect(resolveCalibration(platt, 'anything')).toBe(platt); // bare calibrator applies to all
+    expect(resolveCalibration(undefined, 'receipt')).toBeUndefined();
+    expect(resolveCalibration({ byType: {} }, 'receipt')).toBeUndefined(); // no match, no default
   });
 
   it('PARITY: matches the scikit-learn sidecar output for every sample point', () => {

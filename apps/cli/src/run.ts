@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { requireApiKey, buildPipeline, saveToReviewQueue } from './wiring';
+import { requireApiKey, buildPipeline, saveToReviewQueue, loadCalibration } from './wiring';
 import { FsPageImageStore } from './fs-image-store';
 
 async function main(): Promise<void> {
@@ -16,9 +16,15 @@ async function main(): Promise<void> {
   const uploadId = 'cli-upload';
   const pages = files.map((f, i) => ({ pageIndex: i, imageRef: f }));
   const store = new FsPageImageStore(new Map([[uploadId, files]]));
-  const pipeline = buildPipeline(apiKey, store);
+  const calibration = loadCalibration();
+  const pipeline = buildPipeline(apiKey, store, calibration);
 
-  console.error(`Processing ${files.length} page(s) through the pipeline…\n`);
+  const calLabel = !calibration
+    ? 'uncalibrated'
+    : 'method' in calibration
+      ? `calibrated: ${calibration.method}`
+      : 'calibrated: per-type';
+  console.error(`Processing ${files.length} page(s) through the pipeline (${calLabel})…\n`);
   const result = await pipeline.process(uploadId, pages);
 
   for (const doc of result.documents) {

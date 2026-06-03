@@ -10,12 +10,20 @@ import sys
 import numpy as np
 
 rng = np.random.default_rng(0)
-n = 300
-conf = rng.uniform(0.55, 0.99, n)        # the model reports high confidence...
-true_p = conf**2.2                        # ...but is actually right far less often (overconfident)
-correct = (rng.random(n) < true_p).astype(int)
 
-items = [{"confidence": round(float(c), 4), "correct": bool(k)} for c, k in zip(conf, correct)]
+
+def make(n: int, doc_type: str, bias: float) -> list[dict]:
+    """Miscalibrated points for one type: true accuracy = conf**bias (bias>1 ⇒ overconfident)."""
+    conf = rng.uniform(0.55, 0.99, n)
+    correct = (rng.random(n) < conf**bias).astype(int)
+    return [
+        {"confidence": round(float(c), 4), "correct": bool(k), "docType": doc_type}
+        for c, k in zip(conf, correct)
+    ]
+
+
+# Two types with DIFFERENT miscalibration → per-type calibrators should beat one global fit.
+items = make(160, "receipt", 2.2) + make(160, "bank_statement", 1.4)
 out = sys.argv[1] if len(sys.argv) > 1 else "results.json"
 json.dump({"items": items}, open(out, "w"), indent=2)
-print(f"wrote {n} items to {out}  (mean confidence {conf.mean():.3f}, mean accuracy {correct.mean():.3f})")
+print(f"wrote {len(items)} items to {out}  (receipt: overconfident, bank_statement: mildly overconfident)")

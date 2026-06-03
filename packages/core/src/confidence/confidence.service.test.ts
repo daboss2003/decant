@@ -48,4 +48,24 @@ describe('HeuristicConfidenceService', () => {
     expect(out[0]?.fieldPath).toBe('landlord');
     expect(out[0]?.confidence).toBeLessThanOrEqual(0.5);
   });
+
+  it('applies a fitted calibrator to the fused RAW score and records the raw value', async () => {
+    // Platt a=1, b=-2 → calibrated = sigmoid(raw - 2)
+    const calibrated = new HeuristicConfidenceService({ calibration: { method: 'platt', platt: { a: 1, b: -2 } } });
+    const d = doc('typed', { total: { value: 1, modelConfidence: 1, sourceQuote: null } });
+    const out = await calibrated.score(d, validation([]), 1); // raw fused = 1 * 1 = 1
+    expect(out[0]?.signals.rawConfidence).toBe(1);
+    expect(out[0]?.signals.calibrated).toBe(true);
+    expect(out[0]?.confidence).toBeCloseTo(1 / (1 + Math.exp(2 - 1)), 4); // sigmoid(-1) ≈ 0.269
+  });
+
+  it('uses the per-doc-type calibrator (CalibrationSet) matching the document type', async () => {
+    // receipt → sigmoid(raw - 2); the default would be identity-ish (a=1,b=0)
+    const svc2 = new HeuristicConfidenceService({
+      calibration: { byType: { receipt: { method: 'platt', platt: { a: 1, b: -2 } } }, default: { method: 'platt', platt: { a: 1, b: 0 } } },
+    });
+    const d = doc('typed', { total: { value: 1, modelConfidence: 1, sourceQuote: null } }); // docType 'receipt'
+    const out = await svc2.score(d, validation([]), 1); // raw fused = 1 → receipt calibrator sigmoid(1-2)
+    expect(out[0]?.confidence).toBeCloseTo(1 / (1 + Math.exp(2 - 1)), 4);
+  });
 });

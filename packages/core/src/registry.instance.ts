@@ -1,6 +1,7 @@
 import { createRegistry } from './registry';
 import { receiptEntry } from './doc-types/receipt.entry';
 import { bankStatementEntry } from './doc-types/bank-statement.entry';
+import { cacEntry } from './doc-types/cac.entry';
 
 /**
  * The v1 registry. Adding a document type = adding an entry here
@@ -10,7 +11,8 @@ import { bankStatementEntry } from './doc-types/bank-statement.entry';
 export const registry = createRegistry([
   receiptEntry,
   bankStatementEntry,
-  // TODO: cacEntry (M5), rentReceiptEntry (easy win)
+  cacEntry,
+  // TODO: rentReceiptEntry (easy win)
 ]);
 
 /** Set of registered type ids — used by `segmentPages` to route vs. fall back. */

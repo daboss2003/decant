@@ -32,6 +32,7 @@ export interface EvalCase {
 
 export interface PerFieldResult {
   docId: string;
+  docType: string;
   fieldPath: string;
   kind: MatchKind;
   expected: unknown;
@@ -69,6 +70,7 @@ export function evaluate(cases: EvalCase[]): EvalReport {
       const pf = byPath.get(path);
       perField.push({
         docId: c.gold.id,
+        docType: c.gold.docType,
         fieldPath: path,
         kind: gf.kind,
         expected: gf.expected,

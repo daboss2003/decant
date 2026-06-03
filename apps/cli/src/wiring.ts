@@ -9,6 +9,8 @@ import {
   registry,
   KNOWN_DOC_TYPES,
   type PipelineResult,
+  type Calibration,
+  type CalibrationSet,
 } from '@decant/core';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService, type PageImageStore } from '@decant/gemini';
 import { createPrismaClient, savePipelineResult } from '@decant/db';
@@ -43,15 +45,37 @@ export function requireApiKey(): string {
   return key;
 }
 
-/** Wire the real Gemini-backed pipeline over a given image store (plan §8 adapters). */
-export function buildPipeline(apiKey: string, store: PageImageStore): DocumentPipeline {
+/**
+ * Load a fitted calibrator if one exists (from `DECANT_CALIBRATION` or the
+ * default sidecar output), else undefined → the pipeline uses raw scores.
+ */
+export function loadCalibration(): Calibration | CalibrationSet | undefined {
+  const path = process.env.DECANT_CALIBRATION ?? resolve(process.cwd(), '../../reports/eval/calibration.json');
+  if (!existsSync(path)) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as Calibration | CalibrationSet;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Wire the real Gemini-backed pipeline over a given image store (plan §8 adapters).
+ * Pass a `calibration` to make routing use calibrated probabilities; omit it for
+ * the eval pipeline (which must measure RAW scores to fit the calibrator).
+ */
+export function buildPipeline(
+  apiKey: string,
+  store: PageImageStore,
+  calibration?: Calibration | CalibrationSet,
+): DocumentPipeline {
   const client = new GoogleGenAIClient(apiKey);
   return new DocumentPipeline(
     {
       classify: new GeminiClassifyService(client, store, { knownTypes: [...KNOWN_DOC_TYPES] }),
       extraction: new GeminiExtractionService(client, store, registry),
       validation: new RuleValidationService(registry),
-      confidence: new HeuristicConfidenceService(),
+      confidence: new HeuristicConfidenceService({ calibration }),
       routing: new ThresholdRoutingService(),
     },
     { knownTypes: KNOWN_DOC_TYPES, minClassifyConfidence: 0.5 },

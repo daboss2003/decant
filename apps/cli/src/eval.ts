@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   // Emit results.json (per-field confidence + correctness) for the calibration sidecar.
   const outDir = resolve(process.cwd(), '../../reports/eval');
   mkdirSync(outDir, { recursive: true });
-  const items = report.perField.map((p) => ({ confidence: p.confidence, correct: p.correct }));
+  const items = report.perField.map((p) => ({ confidence: p.confidence, correct: p.correct, docType: p.docType }));
   writeFileSync(join(outDir, 'results.json'), JSON.stringify({ items }, null, 2));
   console.log(`Wrote ${items.length} scored fields → reports/eval/results.json`);
   console.log('Fit calibration:  packages/calibrate/.venv/bin/python -m calibrate.fit --in reports/eval/results.json --out reports/eval/');
