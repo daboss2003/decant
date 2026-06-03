@@ -1,6 +1,7 @@
 import { segmentPages, type DocumentSegment } from './segment';
 import { flattenExtraction } from './confidence/flatten';
 import { alignValueToTokens, type FieldProvenance } from './provenance';
+import type { Enrichment } from './enrichment';
 import type { RuleResult } from './registry';
 import type {
   ClassifyService,
@@ -47,6 +48,8 @@ export interface DocumentResult {
   reclassify: boolean;
   ruleResults: RuleResult[];
   fields: FieldResult[];
+  /** External-source enrichment/verification (plan §8 client role); absent until enriched. */
+  enrichments?: Enrichment[];
 }
 
 export interface PipelineResult {

@@ -1,5 +1,6 @@
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import {
   DocumentPipeline,
@@ -14,7 +15,17 @@ import {
 } from '@decant/core';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService, type PageImageStore } from '@decant/gemini';
 import { TesseractOcrProvider } from '@decant/ocr';
+import {
+  ExternalMcpClient,
+  EnrichmentService,
+  FxEnricher,
+  RegistryEnricher,
+  FX_DEMO_SERVER,
+  REGISTRY_DEMO_SERVER,
+} from '@decant/enrich';
 import { createPrismaClient, savePipelineResult } from '@decant/db';
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 /** Minimal .env loader — walks up from cwd looking for .env / packages/gemini/.env. */
 export function loadDotenv(): void {
@@ -85,6 +96,32 @@ export function buildPipeline(
     },
     { knownTypes: KNOWN_DOC_TYPES, minClassifyConfidence: 0.5 },
   );
+}
+
+export interface EnrichmentHandle {
+  service: EnrichmentService;
+  close(): Promise<void>;
+}
+
+/**
+ * Wire the MCP *client*-role enrichment (plan §8) against the bundled demo
+ * registry + FX servers, spawned over stdio. Decant consumes other MCP servers
+ * the same way an MCP host consumes Decant.
+ */
+export function buildEnrichment(): EnrichmentHandle {
+  const tsx = resolve(here, '../node_modules/.bin/tsx');
+  // No `env` — the SDK's default allowlist (PATH/HOME/…) already lets tsx run, and
+  // the demo servers need nothing more. Never forward process.env: it would leak
+  // GEMINI_API_KEY etc. to a spawned child (a real third-party server especially).
+  const fxClient = new ExternalMcpClient({ command: tsx, args: [FX_DEMO_SERVER] });
+  const registryClient = new ExternalMcpClient({ command: tsx, args: [REGISTRY_DEMO_SERVER] });
+  const service = new EnrichmentService([new FxEnricher(fxClient, 'USD'), new RegistryEnricher(registryClient)]);
+  return {
+    service,
+    close: async () => {
+      await Promise.all([fxClient.close(), registryClient.close()]);
+    },
+  };
 }
 
 /**

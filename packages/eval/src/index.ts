@@ -4,3 +4,4 @@ export * from './metrics';
 export * from './evaluate';
 export * from './report';
 export * from './gold';
+export * from './generate';

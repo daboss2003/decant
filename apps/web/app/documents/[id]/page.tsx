@@ -1,10 +1,16 @@
 import Link from 'next/link';
+import type { Enrichment } from '@decant/core';
 import { prisma } from '../../../lib/db';
 import { FieldReviewForm } from './field-review-form';
 
 export const dynamic = 'force-dynamic';
 
 type Signals = Record<string, number | boolean> | null;
+
+/** Narrow the Json `enrichment` column to the enrichment array (or []). */
+function asEnrichments(v: unknown): Enrichment[] {
+  return Array.isArray(v) ? (v as Enrichment[]) : [];
+}
 
 type Provenance = { pageIndex: number; bbox: { x: number; y: number; w: number; h: number } };
 
@@ -18,8 +24,12 @@ function asProvenance(v: unknown): Provenance | null {
 }
 
 function whyFlagged(signals: Signals): string {
-  // NOTE: keys mirror what the confidence pipeline emits today (see @decant/core).
+  // NOTE: keys mirror what the confidence pipeline + enrichment emit (see @decant/core).
   if (signals && typeof signals === 'object') {
+    // External-source (MCP client) verdicts — the model may have been confident.
+    if (signals.registryMismatch) return 'an external company registry returned a DIFFERENT registered name — an authority disagrees with the model';
+    if (signals.registryNotFound) return 'the RC number was not found in the company registry — could not verify';
+    if (signals.registryUnavailable) return 'the company registry could not be reached — verification was not completed';
     if (signals.gateFailed) return 'a domain rule (GATE) failed — the value does not reconcile';
     if (signals.signalFailed) return 'a soft check (SIGNAL) failed';
     if (signals.generic) return 'extracted via the generic fallback (low trust)';
@@ -51,6 +61,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   }
 
   const auto = doc.fields.filter((f) => f.status === 'auto_approved').length;
+  const enrichments = asEnrichments(doc.enrichment);
 
   // Fields we can point to on the scan, numbered so each box matches its row.
   const located = doc.fields
@@ -66,6 +77,28 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         {auto}/{doc.fields.length} auto-approved · pages {doc.pageStart}-{doc.pageEnd}
         {doc.reclassify ? ' · ⚠ flagged for reclassification' : ''}
       </p>
+
+      {enrichments.length > 0 && (
+        <div className="card enrich">
+          <strong>External verification</strong> <span className="muted">(MCP client → registry / FX)</span>
+          <ul>
+            {enrichments.map((e, i) =>
+              e.kind === 'registry' ? (
+                <li key={i}>
+                  Company registry: <span className={`pill ${e.status === 'verified' ? 'ok' : 'review'}`}>{e.status.replace('_', ' ')}</span>
+                  {e.registeredName ? ` — registered “${e.registeredName}” vs extracted “${e.extractedName ?? '—'}”` : ''}
+                  {e.status === 'mismatch' ? ` · name match ${e.nameMatchScore.toFixed(2)}` : ''}
+                </li>
+              ) : (
+                <li key={i}>
+                  FX: {e.field} = {e.amount} {e.currency} ≈ <strong>{e.baseAmount} {e.base}</strong>{' '}
+                  <span className="muted">(rate {e.rate}, {e.asOf})</span>
+                </li>
+              ),
+            )}
+          </ul>
+        </div>
+      )}
 
       <div className="review">
         {/* OCR-aligned provenance: each box points to where on the scan a value
@@ -119,6 +152,9 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                 <div>
                   <span className="val">{displayValue(f.value)}</span>{' '}
                   <span className="conf">conf {f.confidence.toFixed(2)}</span>
+                  {(f.signals as Signals)?.registryVerified && (
+                    <span className="pill ok" title="corroborated by an external company registry">✓ registry-verified</span>
+                  )}
                 </div>
 
                 {flagged && (

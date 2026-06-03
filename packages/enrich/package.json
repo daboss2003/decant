@@ -1,5 +1,5 @@
 {
-  "name": "@decant/gemini",
+  "name": "@decant/enrich",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,11 +9,11 @@
   },
   "dependencies": {
     "@decant/core": "workspace:*",
-    "@decant/schemas": "workspace:*",
-    "@google/genai": "^2.7.0",
-    "zod": "^4.3.5"
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1"
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.4"
   }
 }

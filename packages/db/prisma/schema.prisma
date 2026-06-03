@@ -30,6 +30,7 @@ model Document {
   pageStart   Int
   pageEnd     Int
   reclassify  Boolean      @default(false)
+  enrichment  Json? // external-source enrichment/verification (plan §8 client role)
   createdAt   DateTime     @default(now())
   fields      Field[]
   auditEvents AuditEvent[]

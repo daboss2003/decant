@@ -28,6 +28,7 @@ export async function savePipelineResult(
           pageStart: d.pageRange[0],
           pageEnd: d.pageRange[1],
           reclassify: d.reclassify,
+          enrichment: toJson(d.enrichments ?? null),
         },
       });
 
@@ -57,6 +58,19 @@ export async function savePipelineResult(
           }),
         },
       });
+
+      if (d.enrichments && d.enrichments.length > 0) {
+        await tx.auditEvent.create({
+          data: {
+            documentId: doc.id,
+            type: 'enriched',
+            actor: 'system',
+            payload: toJson({
+              sources: d.enrichments.map((e) => (e.kind === 'registry' ? `registry:${e.status}` : `fx:${e.field}`)),
+            }),
+          },
+        });
+      }
     }
 
     return upload.id;

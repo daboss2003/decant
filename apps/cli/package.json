@@ -11,6 +11,7 @@
   "dependencies": {
     "@decant/core": "workspace:*",
     "@decant/db": "workspace:*",
+    "@decant/enrich": "workspace:*",
     "@decant/eval": "workspace:*",
     "@decant/gemini": "workspace:*",
     "@decant/ocr": "workspace:*",

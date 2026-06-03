@@ -7,6 +7,7 @@ export * from './services';
 export * from './field-match';
 export * from './calibration';
 export * from './provenance';
+export * from './enrichment';
 export * from './confidence/flatten';
 export * from './confidence/confidence.service';
 export * from './routing/routing.service';

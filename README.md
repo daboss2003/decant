@@ -24,6 +24,7 @@ A document classifies to a **registered type** (receipt/invoice, bank statement,
 | `packages/core` | Transport-agnostic domain core: registry, segmentation, rules, confidence, routing, the pipeline orchestrator |
 | `packages/gemini` | `@google/genai`-backed Classify + Extract services (the SDK behind a mockable interface) |
 | `packages/ocr` | tesseract.js `OcrProvider` → per-field bbox provenance (fuzzy-aligned to each value, independent of the model's claim) |
+| `packages/enrich` | the **MCP client role**: consume external MCP servers (company registry, FX) to enrich + verify extracted data (+ bundled demo servers) |
 | `packages/db` | Prisma + SQLite persistence + the audit-trail-writing `ReviewService` |
 | `packages/eval` | Gold scoring + success metrics (field accuracy, reliability/ECE/Brier, safe-failure rate, threshold sweep) |
 | `apps/cli` | Run extraction / eval against real Gemini |
@@ -52,7 +53,9 @@ pnpm --filter @decant/cli run extract sample-receipt.png --save   # also push it
 pnpm --filter @decant/cli run extract sample-receipt.png --save --ocr   # + bbox provenance via Tesseract
 
 # 2. Eval over the gold set (real Gemini) — accuracy, ECE, safe-failure, threshold sweep
-pnpm --filter @decant/cli run eval
+pnpm --filter @decant/cli run eval                       # full generated set (48 docs across 3 types)
+pnpm --filter @decant/cli run eval --render-only         # render the gold images only (no API calls)
+pnpm --filter @decant/cli run eval --type receipt --limit 8   # cost-controlled subset
 
 # 3. Human-in-the-loop review UI
 pnpm --filter @decant/web run seed
@@ -70,31 +73,52 @@ packages/calibrate/.venv/bin/pip install -e packages/calibrate
 packages/calibrate/.venv/bin/python -m calibrate.fit --in reports/eval/results.json --out reports/eval/
 ```
 
-On a synthetic overconfident set this halves ECE (**0.245 → 0.101**). A meaningful real reliability diagram needs ~100s of labeled field instances (grow the gold set).
+The labeled gold set is **generated** (`@decant/eval` `generateGoldSet` — deterministic/seeded, PII-free) across all three registered types, with per-type renderers + image degradation (blur/rotate/low-quality JPEG) so the model's confidence actually varies. The Gemini client retries transient 429(per-minute)/5xx/network errors with backoff and **fails fast on a per-day quota**.
+
+On a synthetic overconfident set the sidecar halves ECE (**0.245 → 0.101**). A real run over 16 generated receipts scored 100% field accuracy / 0% silent-error at ECE 0.067 — but a statistically meaningful **per-type** reliability diagram needs the full multi-type set, which exceeds the **Gemini free tier's 20 `gemini-2.5-flash` requests/day**; run `pnpm --filter @decant/cli run eval` on a paid key (or accumulate across days) to produce it.
 
 ## MCP server
 
-Decant exposes its capabilities over the **Model Context Protocol** — `apps/mcp` is a thin stdio adapter over the same `core` + `db` the web UI uses, so a correction made via MCP writes the **identical** audit trail.
+Decant exposes its capabilities over the **Model Context Protocol** — `apps/mcp` is a thin adapter over the same `core` + `db` the web UI uses, so a correction made via MCP writes the **identical** audit trail. It runs over **stdio** or a **bearer-guarded Streamable HTTP** transport.
 
 - **Tools:** `extract_document`, `list_review_queue`, `get_document`, `correct_field`, and **`review_document`** — the human-review step, delivered via **MCP elicitation**.
 - **Resources:** `decant://documents/{id}`, `decant://audit/{id}`.
 
 ```bash
-# drive it with the bundled demo client
+# drive it with the bundled demo client (stdio)
 pnpm --filter @decant/mcp run client                 # list tools + review queue
 pnpm --filter @decant/mcp run client <documentId>    # read its resource + review it
 
 # or register the stdio server with an MCP host (e.g. Claude Code)
 claude mcp add decant -- pnpm --filter @decant/mcp run serve
+
+# HTTP transport (bearer-guarded, loopback): server then client
+MCP_TRANSPORT=http MCP_AUTH_TOKEN=$(openssl rand -hex 16) pnpm --filter @decant/mcp run serve
+MCP_SERVER_URL=http://127.0.0.1:3333/mcp MCP_AUTH_TOKEN=… pnpm --filter @decant/mcp run client
 ```
 
-The marquee: when `review_document` hits a flagged field it **elicits** a structured correction from the human and records it through the same `ReviewService` as the web UI — proven by a headless integration test (`apps/mcp/src/server.test.ts`) that spawns the server, auto-answers the elicitation, and asserts the audit trail.
+The marquee: when `review_document` hits a flagged field it **elicits** a structured correction from the human and records it through the same `ReviewService` as the web UI — proven by headless integration tests over **both** transports (`server.test.ts` stdio; `http-auth.test.ts` HTTP) that drive the server, auto-answer the elicitation, and assert the audit trail.
+
+**HTTP auth & hardening** (`apps/mcp/src/auth.ts`, `http-transport.ts`): every request needs `Authorization: Bearer <MCP_AUTH_TOKEN>`, compared in **constant time** (SHA-256 + `timingSafeEqual`); missing/invalid tokens get `401` + a correct `WWW-Authenticate` challenge. The server **fails closed** (refuses to start without a token), binds to `127.0.0.1`, enables the SDK's **DNS-rebinding protection** (Host/Origin allow-lists), uses crypto-random session ids, caps the request body (1 MiB → `413`) and concurrent sessions, and reaps idle/disconnected sessions. A static shared secret is a deliberate simplification of the MCP OAuth 2.1 authorization framework — appropriate for a local tool. The transport choices were derived from the SDK source and the implementation passed an adversarial security review.
+
+### MCP client role (consuming other servers)
+
+Decant is also an MCP **client**: after extraction it connects OUT to external MCP servers to **enrich** and **verify** data (`packages/enrich`, bundled deterministic demo servers under `src/demo/`).
+
+- **FX** — convert money fields into a base currency (enrichment).
+- **Registry** — look up a CAC `rcNumber` and compare the registered name to the extracted one. A **mismatch routes `companyName` to human review** — an external-source *safe failure* that feeds the same trust loop; `not_found` and `unavailable` (registry unreachable) route too, each with a distinct signal so "couldn't verify" is never mistaken for "verified"; a match records a `registryVerified` corroboration. The verdict is **surfaced in the review UI** (an "External verification" panel + an honest "Why" reason) and persisted to `Document.enrichment` with an `enriched` audit event.
+
+```bash
+pnpm --filter @decant/cli run extract sample-receipt.png --save --enrich   # FX + registry verification
+```
+
+Enrichment is **best-effort** (an unreachable server never sinks an extraction) and treats external servers as untrusted: outputs are schema-validated, no secrets are forwarded to spawned children, and connects fail fast. Integration tests (`packages/enrich/src/enrich.test.ts`) spawn the demo servers over stdio and assert FX + the registry verdicts (incl. unavailable); the pure compare/fold-back logic lives in `@decant/core`. The implementation passed an adversarial review (correctness, resource safety, security/privacy).
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness, **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), and the **MCP server + client** (elicitation-based review).
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), and the **MCP client role** (external registry/FX enrichment + verification feeding the trust loop).
 
-**Roadmap:** a larger labeled gold set (for a statistically meaningful per-type diagram) · auth · MCP client-role enrichment (registry/FX lookups).
+**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day) · real external registry/FX adapters (the demo servers are deterministic stand-ins).
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 

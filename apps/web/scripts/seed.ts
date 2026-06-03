@@ -34,6 +34,35 @@ const result: PipelineResult = {
         { fieldPath: 'total', value: 9999, confidence: 0.15, status: 'needs_review', signals: { gateFailed: true },
           provenance: { pageIndex: 0, bbox: { x: 0.194, y: 0.562, w: 0.181, h: 0.053 } } },
       ],
+      // MCP client role: FX-converted total via an external FX server.
+      enrichments: [
+        { kind: 'fx', field: 'total', amount: 9999, currency: 'NGN', base: 'USD', baseAmount: 6.5, rate: 0.00065, asOf: '2026-05-01' },
+      ],
+    },
+  ],
+};
+
+// A CAC document whose extracted company name does NOT match the company registry
+// for its RC number — the registry verification (MCP client) routes companyName to
+// review: an external-source safe failure even though the model was confident.
+const cacResult: PipelineResult = {
+  uploadId: 'seed-cac',
+  documents: [
+    {
+      documentId: 'seed-cac-doc',
+      docType: 'cac',
+      mode: 'typed',
+      pageRange: [0, 0],
+      reclassify: false,
+      ruleResults: [],
+      fields: [
+        { fieldPath: 'rcNumber', value: 'RC123456', confidence: 0.96, status: 'auto_approved', signals: {} },
+        { fieldPath: 'companyName', value: 'Zenith Holdings', confidence: 0.94, status: 'needs_review', signals: { registryMismatch: true } },
+        { fieldPath: 'registrationDate', value: '2019-03-12', confidence: 0.95, status: 'auto_approved', signals: {} },
+      ],
+      enrichments: [
+        { kind: 'registry', rcNumber: 'RC123456', registeredName: 'Acme Nigeria Limited', extractedName: 'Zenith Holdings', nameMatchScore: 0.07, status: 'mismatch' },
+      ],
     },
   ],
 };
@@ -62,7 +91,8 @@ async function main(): Promise<void> {
     imageRef: '/uploads/seed-receipt.png',
     result,
   });
-  console.log(`seeded upload ${uploadId} (review queue has 1 document)`);
+  const cacUploadId = await savePipelineResult(prisma, { sourceType: 'pdf', nPages: 1, result: cacResult });
+  console.log(`seeded uploads ${uploadId} (receipt) + ${cacUploadId} (CAC, registry mismatch) — review queue has 2 documents`);
   await prisma.$disconnect();
 }
 
