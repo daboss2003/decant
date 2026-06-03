@@ -1,0 +1,22 @@
+{
+  "name": "@decant/mcp",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "serve": "tsx src/server.ts",
+    "client": "tsx src/client.ts"
+  },
+  "dependencies": {
+    "@decant/core": "workspace:*",
+    "@decant/db": "workspace:*",
+    "@decant/gemini": "workspace:*",
+    "@decant/schemas": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.22.4"
+  }
+}

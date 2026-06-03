@@ -57,10 +57,45 @@ pnpm --filter @decant/web run seed
 pnpm --filter @decant/web run dev    # http://localhost:3000
 ```
 
+## Calibration
+
+The eval harness **measures** calibration (ECE / reliability); the offline Python sidecar (`packages/calibrate` — the only non-TS component, batch-only) **fits** a calibrator so "0.9" becomes a real 90%. It reads the harness's `results.json`, fits **Platt + isotonic** with scikit-learn, picks the best by ECE, and emits `calibration.json` + a before/after **reliability diagram**. The TS runtime applies the fitted params (`applyCalibration` in `@decant/core`), **parity-tested** against the sidecar.
+
+```bash
+python3 -m venv packages/calibrate/.venv
+packages/calibrate/.venv/bin/pip install -e packages/calibrate
+# pnpm --filter @decant/cli run eval  writes reports/eval/results.json, then:
+packages/calibrate/.venv/bin/python -m calibrate.fit --in reports/eval/results.json --out reports/eval/
+```
+
+On a synthetic overconfident set this halves ECE (**0.245 → 0.101**). A meaningful real reliability diagram needs ~100s of labeled field instances (grow the gold set).
+
+## MCP server
+
+Decant exposes its capabilities over the **Model Context Protocol** — `apps/mcp` is a thin stdio adapter over the same `core` + `db` the web UI uses, so a correction made via MCP writes the **identical** audit trail.
+
+- **Tools:** `extract_document`, `list_review_queue`, `get_document`, `correct_field`, and **`review_document`** — the human-review step, delivered via **MCP elicitation**.
+- **Resources:** `decant://documents/{id}`, `decant://audit/{id}`.
+
+```bash
+# drive it with the bundled demo client
+pnpm --filter @decant/mcp run client                 # list tools + review queue
+pnpm --filter @decant/mcp run client <documentId>    # read its resource + review it
+
+# or register the stdio server with an MCP host (e.g. Claude Code)
+claude mcp add decant -- pnpm --filter @decant/mcp run serve
+```
+
+The marquee: when `review_document` hits a flagged field it **elicits** a structured correction from the human and records it through the same `ReviewService` as the web UI — proven by a headless integration test (`apps/mcp/src/server.test.ts`) that spawns the server, auto-answers the elicitation, and asserts the audit trail.
+
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements), persistence + audit trail, the eval harness, and the review UI.
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements), persistence + audit trail, the eval harness, **calibration (measure + fit)**, the review UI, and the **MCP server + client** (elicitation-based review).
 
-**Roadmap:** MCP server + client (§8, in progress) · calibration fitting (Python sidecar) · OCR-aligned bbox provenance · CAC document type · auth.
+**Roadmap:** wire calibrated confidence into live routing · OCR-aligned bbox provenance · CAC document type · auth · MCP client-role enrichment (registry/FX lookups).
 
-> Confidence scores are currently **uncalibrated** (raw fusion) — "0.9" is not yet "right 90% of the time." Calibration is the next measurement→fit step. The full design lives in `plan.md`.
+> Calibration is **fitted offline** and applied in TS (`applyCalibration`); the next step is loading `calibration.json` into the live `ConfidenceService` so routing uses calibrated probabilities (and growing the gold set for a statistically meaningful diagram). The full design lives in `plan.md`.
+
+## License
+
+[MIT](./LICENSE) © 2026 Samson Oluwafemi

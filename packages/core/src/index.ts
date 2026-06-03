@@ -5,6 +5,7 @@ export * from './gemini-schema';
 export * from './segment';
 export * from './services';
 export * from './field-match';
+export * from './calibration';
 export * from './confidence/flatten';
 export * from './confidence/confidence.service';
 export * from './routing/routing.service';

@@ -1,6 +1,6 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import sharp from 'sharp';
 import { RECEIPT_GOLD, evaluate, renderReport, type EvalCase, type GoldDoc } from '@decant/eval';
 import { requireApiKey, buildPipeline } from './wiring';
@@ -53,7 +53,16 @@ async function main(): Promise<void> {
     if (predicted) cases.push({ gold, predicted });
   }
 
-  console.log(`\n${renderReport(evaluate(cases))}\n`);
+  const report = evaluate(cases);
+  console.log(`\n${renderReport(report)}\n`);
+
+  // Emit results.json (per-field confidence + correctness) for the calibration sidecar.
+  const outDir = resolve(process.cwd(), '../../reports/eval');
+  mkdirSync(outDir, { recursive: true });
+  const items = report.perField.map((p) => ({ confidence: p.confidence, correct: p.correct }));
+  writeFileSync(join(outDir, 'results.json'), JSON.stringify({ items }, null, 2));
+  console.log(`Wrote ${items.length} scored fields → reports/eval/results.json`);
+  console.log('Fit calibration:  packages/calibrate/.venv/bin/python -m calibrate.fit --in reports/eval/results.json --out reports/eval/');
 }
 
 main().catch((e: unknown) => {

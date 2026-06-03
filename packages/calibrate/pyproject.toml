@@ -1,0 +1,13 @@
+[project]
+name = "decant-calibrate"
+version = "0.1.0"
+description = "Offline calibration sidecar: fits a calibrator (Platt/isotonic) to Decant's confidence scores."
+requires-python = ">=3.11"
+dependencies = ["numpy>=2", "scikit-learn>=1.5", "matplotlib>=3.8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["calibrate"]
