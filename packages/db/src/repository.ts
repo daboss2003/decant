@@ -40,6 +40,7 @@ export async function savePipelineResult(
             confidence: f.confidence,
             status: f.status,
             signals: toJson(f.signals),
+            provenance: toJson(f.provenance),
           },
         });
       }

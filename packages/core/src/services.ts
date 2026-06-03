@@ -1,6 +1,16 @@
 import type { ClassifyOutput, ReviewAction } from '@decant/schemas';
 import type { DocumentSegment } from './segment';
 import type { RuleResult } from './registry';
+import type { OcrToken } from './provenance';
+
+/**
+ * Optional OCR source for field provenance (plan §2/§5). Returns word-level
+ * tokens (with normalized bboxes) for a document's pages, which the pipeline
+ * aligns extracted values to. Implemented by an adapter (e.g. tesseract.js).
+ */
+export interface OcrProvider {
+  recognize(uploadId: string, pageIndices: number[]): Promise<OcrToken[]>;
+}
 
 /**
  * Transport-agnostic domain service CONTRACTS (plan §8: "one core, many

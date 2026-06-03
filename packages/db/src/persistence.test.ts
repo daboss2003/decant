@@ -37,7 +37,14 @@ const makeResult = (): PipelineResult => ({
       reclassify: false,
       ruleResults: [],
       fields: [
-        { fieldPath: 'total', value: 1075, confidence: 0.97, status: 'auto_approved', signals: { gatePassed: true } },
+        {
+          fieldPath: 'total',
+          value: 1075,
+          confidence: 0.97,
+          status: 'auto_approved',
+          signals: { gatePassed: true },
+          provenance: { pageIndex: 0, bbox: { x: 0.6, y: 0.5, w: 0.15, h: 0.03 } },
+        },
         { fieldPath: 'merchantTaxId', value: null, confidence: 0, status: 'needs_review', signals: {} },
       ],
     },
@@ -53,6 +60,7 @@ describe('persistence', () => {
     const total = docs[0]?.fields.find((f) => f.fieldPath === 'total');
     expect(total?.status).toBe('auto_approved');
     expect(total?.value).toBe(1075);
+    expect(total?.provenance).toEqual({ pageIndex: 0, bbox: { x: 0.6, y: 0.5, w: 0.15, h: 0.03 } });
   });
 
   it('applyCorrection writes a Correction + AuditEvent and marks the field corrected (the audit trail)', async () => {

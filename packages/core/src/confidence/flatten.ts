@@ -11,13 +11,17 @@ export interface FieldSelfReport {
   fieldPath: string;
   value: unknown;
   modelConfidence: number;
+  /** The verbatim text the model quoted — best signal for OCR alignment. */
+  sourceQuote: string | null;
 }
 
 function asRecord(n: unknown): Record<string, unknown> | null {
   return typeof n === 'object' && n !== null ? (n as Record<string, unknown>) : null;
 }
 
-function isExtractedField(n: unknown): n is { value: unknown; modelConfidence: number; name?: string } {
+function isExtractedField(
+  n: unknown,
+): n is { value: unknown; modelConfidence: number; name?: string; sourceQuote?: unknown } {
   const r = asRecord(n);
   return r !== null && typeof r.modelConfidence === 'number';
 }
@@ -32,7 +36,12 @@ export function flattenExtraction(raw: unknown): FieldSelfReport[] {
     }
     if (isExtractedField(node)) {
       const leaf = typeof node.name === 'string' && node.name ? node.name : path;
-      out.push({ fieldPath: leaf, value: node.value, modelConfidence: node.modelConfidence });
+      out.push({
+        fieldPath: leaf,
+        value: node.value,
+        modelConfidence: node.modelConfidence,
+        sourceQuote: typeof node.sourceQuote === 'string' ? node.sourceQuote : null,
+      });
       return; // don't recurse into the field wrapper
     }
     const rec = asRecord(node);

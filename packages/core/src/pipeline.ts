@@ -1,5 +1,6 @@
 import { segmentPages, type DocumentSegment } from './segment';
 import { flattenExtraction } from './confidence/flatten';
+import { alignValueToTokens, type FieldProvenance } from './provenance';
 import type { RuleResult } from './registry';
 import type {
   ClassifyService,
@@ -7,9 +8,16 @@ import type {
   ValidationService,
   ConfidenceService,
   RoutingService,
+  OcrProvider,
   PageInput,
   FieldStatus,
 } from './services';
+
+function rangeInclusive([a, b]: [number, number]): number[] {
+  const out: number[] = [];
+  for (let i = a; i <= b; i++) out.push(i);
+  return out;
+}
 
 /**
  * In-memory orchestrator of the whole trust loop (plan §2):
@@ -26,6 +34,8 @@ export interface FieldResult {
   confidence: number;
   status: FieldStatus;
   signals: Record<string, number | boolean>;
+  /** Where on the page this value was found (OCR-aligned); null/absent if no OCR / no match. */
+  provenance?: FieldProvenance | null;
 }
 
 export interface DocumentResult {
@@ -50,6 +60,8 @@ export interface PipelineDeps {
   validation: ValidationService;
   confidence: ConfidenceService;
   routing: RoutingService;
+  /** Optional: when present, each field gets OCR-aligned provenance (plan §2/§5). */
+  ocr?: OcrProvider;
 }
 
 export interface PipelineConfig {
@@ -78,20 +90,33 @@ export class DocumentPipeline {
   }
 
   private async processSegment(segment: DocumentSegment, uploadId: string): Promise<DocumentResult> {
-    const { extraction, validation, confidence, routing } = this.deps;
+    const { extraction, validation, confidence, routing, ocr } = this.deps;
 
     const extracted = await extraction.extract(segment, uploadId);
     const outcome = validation.validate(extracted);
     const scored = await confidence.score(extracted, outcome, segment.confidence);
     const statuses = routing.route(scored, outcome, extracted.mode);
 
-    const valueByPath = new Map(flattenExtraction(extracted.raw).map((f) => [f.fieldPath, f.value]));
+    const reports = flattenExtraction(extracted.raw);
+    const byPath = new Map(reports.map((f) => [f.fieldPath, f]));
+
+    // OCR-align each field to recover its bbox (best-effort; uses the model's
+    // verbatim quote when available, else the value).
+    const tokens = ocr ? await ocr.recognize(uploadId, rangeInclusive(segment.pageRange)) : [];
+    const provenanceFor = (path: string): FieldProvenance | null => {
+      if (tokens.length === 0) return null;
+      const r = byPath.get(path);
+      const needle = r?.sourceQuote ?? (r?.value != null ? String(r.value) : '');
+      return needle ? alignValueToTokens(needle, tokens) : null;
+    };
+
     const fields: FieldResult[] = scored.map((f) => ({
       fieldPath: f.fieldPath,
-      value: valueByPath.get(f.fieldPath),
+      value: byPath.get(f.fieldPath)?.value,
       confidence: f.confidence,
       status: statuses.get(f.fieldPath) ?? 'needs_review',
       signals: f.signals,
+      provenance: provenanceFor(f.fieldPath),
     }));
 
     return {

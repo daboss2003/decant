@@ -4,7 +4,7 @@ import { RuleValidationService } from './validation/validation.service';
 import { HeuristicConfidenceService } from './confidence/confidence.service';
 import { ThresholdRoutingService } from './routing/routing.service';
 import { registry, KNOWN_DOC_TYPES } from './registry.instance';
-import type { ClassifyService, ExtractionService, PageInput } from './services';
+import type { ClassifyService, ExtractionService, OcrProvider, PageInput } from './services';
 import type { DocumentSegment } from './segment';
 import { receiptRaw } from './test-fixtures';
 
@@ -17,6 +17,7 @@ const genericRaw = {
 function makePipeline(
   pages: Array<{ pageIndex: number; docType: string; confidence: number }>,
   extractFor: (segment: DocumentSegment) => unknown,
+  ocr?: OcrProvider,
 ): DocumentPipeline {
   const classify: ClassifyService = { async classify() { return { pages }; } };
   const extraction: ExtractionService = {
@@ -36,6 +37,7 @@ function makePipeline(
       validation: new RuleValidationService(registry),
       confidence: new HeuristicConfidenceService(),
       routing: new ThresholdRoutingService(),
+      ocr,
     },
     { knownTypes: KNOWN_DOC_TYPES, minClassifyConfidence: 0.5 },
   );
@@ -87,5 +89,23 @@ describe('DocumentPipeline (end-to-end, no Gemini)', () => {
     expect(documents[0]?.mode).toBe('generic');
     expect(documents[0]?.fields.length).toBeGreaterThan(0);
     expect(documents[0]?.fields.every((f) => f.status === 'needs_review')).toBe(true);
+  });
+
+  it('attaches OCR-aligned provenance to fields when an OCR provider is supplied', async () => {
+    const ocr: OcrProvider = {
+      async recognize() {
+        return [
+          { pageIndex: 0, text: 'Shoprite', bbox: { x: 0.1, y: 0.05, w: 0.2, h: 0.03 } },
+          { pageIndex: 0, text: '1,075.00', bbox: { x: 0.6, y: 0.5, w: 0.15, h: 0.03 } },
+        ];
+      },
+    };
+    const pipeline = makePipeline([{ pageIndex: 0, docType: 'receipt', confidence: 1 }], cleanReceipt, ocr);
+    const { documents } = await pipeline.process('u1', onePage);
+    const fields = documents[0]!.fields;
+    expect(fields.find((f) => f.fieldPath === 'merchantName')?.provenance?.bbox.x).toBeCloseTo(0.1);
+    expect(fields.find((f) => f.fieldPath === 'total')?.provenance?.bbox.x).toBeCloseTo(0.6);
+    // a field with no matching token gets no provenance
+    expect(fields.find((f) => f.fieldPath === 'tax')?.provenance ?? null).toBeNull();
   });
 });

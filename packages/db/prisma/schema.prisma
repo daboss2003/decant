@@ -44,6 +44,7 @@ model Field {
   confidence  Float
   status      String // auto_approved | needs_review | corrected | rejected
   signals     Json?
+  provenance  Json? // { pageIndex, bbox } from OCR alignment (plan §2/§5)
   corrections Correction[]
 
   @@unique([documentId, fieldPath])
