@@ -9,14 +9,19 @@
   "dependencies": {
     "@decant/core": "workspace:*",
     "@decant/db": "workspace:*",
+    "@decant/gemini": "workspace:*",
+    "@decant/ingest": "workspace:*",
+    "@decant/queue": "workspace:*",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
+    "multer": "^2.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/multer": "^2.0.0",
     "@types/node": "^25.9.1",
     "tsx": "^4.22.4"
   }

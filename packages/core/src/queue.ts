@@ -1,5 +1,3 @@
-import type { PageInput } from './services';
-
 /**
  * The async-pipeline seam (plan §8 / "BullMQ + Redis"). Producers `add` jobs; a
  * registered handler processes them. Two implementations share this contract:
@@ -27,9 +25,16 @@ export class InProcessQueue<T> implements JobQueue<T> {
   }
 }
 
-/** One upload to push through the pipeline — the unit of async work. */
+/**
+ * One upload to push through the pipeline — the unit of async work. Serializable
+ * (paths + text, not objects) so it survives a BullMQ round-trip to a worker.
+ */
 export interface IngestJob {
-  uploadId: string;
+  /** Correlation id for status polling. */
+  jobId: string;
   sourceType: string;
-  pages: PageInput[];
+  /** Per-page image paths (rasterized PDF pages / images). */
+  pageImages: string[];
+  /** Per-page born-digital text ('' where none). */
+  pageTexts: string[];
 }
