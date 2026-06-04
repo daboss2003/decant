@@ -14,13 +14,12 @@
     "@decant/enrich": "workspace:*",
     "@decant/eval": "workspace:*",
     "@decant/gemini": "workspace:*",
+    "@decant/ingest": "workspace:*",
     "@decant/ocr": "workspace:*",
-    "@decant/schemas": "workspace:*",
-    "mupdf": "^1.27.0"
+    "@decant/schemas": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "pdf-lib": "^1.17.1",
     "sharp": "^0.34.5",
     "tsx": "^4.22.4"
   }

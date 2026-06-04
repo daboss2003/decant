@@ -1,7 +1,6 @@
 import { resolve } from 'node:path';
 import { requireApiKey, buildPipeline, buildEnrichment, saveToReviewQueue, loadCalibration } from './wiring';
-import { FsPageImageStore } from './fs-image-store';
-import { toPages } from './pdf';
+import { FsPageImageStore, toPages } from '@decant/ingest';
 
 async function main(): Promise<void> {
   const apiKey = requireApiKey();

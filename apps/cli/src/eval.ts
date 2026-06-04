@@ -5,8 +5,7 @@ import { RECEIPT_GOLD, generateGoldSet, evaluate, renderReport, type EvalCase, t
 import { requireApiKey, buildPipeline } from './wiring';
 import { renderGold } from './renderers';
 import { loadGoldDir } from './gold-dir';
-import { toPages } from './pdf';
-import { FsPageImageStore } from './fs-image-store';
+import { toPages, FsPageImageStore } from '@decant/ingest';
 
 /**
  * Eval harness (plan §4): ingest a labeled gold set → run the real pipeline →

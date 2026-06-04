@@ -66,22 +66,19 @@ importers:
       '@decant/gemini':
         specifier: workspace:*
         version: link:../../packages/gemini
+      '@decant/ingest':
+        specifier: workspace:*
+        version: link:../../packages/ingest
       '@decant/ocr':
         specifier: workspace:*
         version: link:../../packages/ocr
       '@decant/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
-      mupdf:
-        specifier: ^1.27.0
-        version: 1.27.0
     devDependencies:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
-      pdf-lib:
-        specifier: ^1.17.1
-        version: 1.17.1
       sharp:
         specifier: ^0.34.5
         version: 0.34.5
@@ -228,6 +225,25 @@ importers:
       '@types/node':
         specifier: ^25.9.1
         version: 25.9.1
+
+  packages/ingest:
+    dependencies:
+      '@decant/gemini':
+        specifier: workspace:*
+        version: link:../gemini
+      mupdf:
+        specifier: ^1.27.0
+        version: 1.27.0
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.1
+        version: 25.9.1
+      pdf-lib:
+        specifier: ^1.17.1
+        version: 1.17.1
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
 
   packages/ocr:
     dependencies:
