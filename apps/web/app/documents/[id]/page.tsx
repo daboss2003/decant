@@ -2,6 +2,7 @@ import Link from 'next/link';
 import type { Enrichment } from '@decant/core';
 import { prisma } from '../../../lib/db';
 import { FieldReviewForm } from './field-review-form';
+import { PageViewer, type ViewerBox, type ViewerPage } from './page-viewer';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,6 +84,24 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
     .filter((x): x is { f: (typeof doc.fields)[number]; prov: Provenance } => x.prov !== null);
   const numberOf = new Map(located.map((x, i) => [x.f.id, i + 1]));
 
+  // Per-page image refs (multi-page) + the boxes to overlay, for the paged viewer.
+  const pageRefs = Array.isArray(doc.upload.pageImageRefs) ? (doc.upload.pageImageRefs as (string | null)[]) : null;
+  const pages: ViewerPage[] = [];
+  for (let p = doc.pageStart; p <= doc.pageEnd; p++) {
+    pages.push({ pageIndex: p, ref: pageRefs ? (pageRefs[p] ?? null) : p === doc.pageStart ? doc.upload.imageRef ?? null : null });
+  }
+  const boxes: ViewerBox[] = located.map(({ f, prov }) => ({
+    id: f.id,
+    pageIndex: prov.pageIndex,
+    num: numberOf.get(f.id) ?? 0,
+    ok: f.status === 'auto_approved',
+    x: prov.bbox.x,
+    y: prov.bbox.y,
+    w: prov.bbox.w,
+    h: prov.bbox.h,
+    title: `${f.fieldPath} — ${displayValue(f.value)}`,
+  }));
+
   return (
     <main>
       <p><Link href="/">← queue</Link></p>
@@ -118,39 +137,8 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
       )}
 
       <div className="review">
-        {/* OCR-aligned provenance: each box points to where on the scan a value
-            was found; the number matches the field row on the right (plan §2/§5). */}
-        <div className="scan">
-          {doc.upload.imageRef ? (
-            <>
-              {/* eslint-disable-next-line @next/next/no-img-element -- local raster scan, not next/image */}
-              <img
-                className="doc-image"
-                src={doc.upload.imageRef}
-                alt={`${doc.docType} scan, pages ${doc.pageStart}-${doc.pageEnd}`}
-              />
-              {located
-                .filter(({ prov }) => prov.pageIndex === doc.pageStart)
-                .map(({ f, prov }) => (
-                  <div
-                    key={f.id}
-                    className={`bbox ${f.status === 'auto_approved' ? 'ok' : 'review'}`}
-                    style={{
-                      left: `${prov.bbox.x * 100}%`,
-                      top: `${prov.bbox.y * 100}%`,
-                      width: `${prov.bbox.w * 100}%`,
-                      height: `${prov.bbox.h * 100}%`,
-                    }}
-                    title={`${f.fieldPath} — ${displayValue(f.value)}`}
-                  >
-                    <span className="bbox-num">{numberOf.get(f.id)}</span>
-                  </div>
-                ))}
-            </>
-          ) : (
-            <div className="card muted">No page image stored for this upload.</div>
-          )}
-        </div>
+        {/* OCR-aligned provenance overlaid on each page; number matches the field row (plan §2/§5). */}
+        <PageViewer pages={pages} boxes={boxes} alt={`${doc.docType} scan, pages ${doc.pageStart}-${doc.pageEnd}`} />
 
         <div>
           {doc.fields.map((f) => {

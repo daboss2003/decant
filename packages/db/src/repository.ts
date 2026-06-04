@@ -9,12 +9,14 @@ import { toJson } from './client';
  */
 export async function savePipelineResult(
   prisma: PrismaClient,
-  params: { sourceType: string; nPages: number; result: PipelineResult; imageRef?: string },
+  params: { sourceType: string; nPages: number; result: PipelineResult; imageRef?: string; pageImageRefs?: Array<string | null> },
 ): Promise<string> {
-  const { sourceType, nPages, result, imageRef } = params;
+  const { sourceType, nPages, result, imageRef, pageImageRefs } = params;
 
   return prisma.$transaction(async (tx) => {
-    const upload = await tx.upload.create({ data: { sourceType, nPages, imageRef: imageRef ?? null } });
+    const upload = await tx.upload.create({
+      data: { sourceType, nPages, imageRef: imageRef ?? null, pageImageRefs: pageImageRefs ? toJson(pageImageRefs) : undefined },
+    });
     await tx.auditEvent.create({
       data: { uploadId: upload.id, type: 'extracted', actor: 'system', payload: toJson({ documents: result.documents.length }) },
     });

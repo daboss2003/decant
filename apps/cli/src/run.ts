@@ -76,8 +76,8 @@ async function main(): Promise<void> {
   }
 
   if (save && pageImages[0]) {
-    // Persist the rasterized first page (PDFs) / the image so the review UI shows it.
-    const { documentId } = await saveToReviewQueue(result, pageImages[0], pageImages.length);
+    // Persist all page images so multi-page docs can be paged through in review.
+    const { documentId } = await saveToReviewQueue(result, pageImages, pageImages.length);
     console.log(
       documentId
         ? `Saved to review queue → http://localhost:3000/documents/${documentId}`

@@ -21,6 +21,7 @@ import {
   EnrichmentService,
   FxEnricher,
   registryVerifier,
+  mcpRegistryLookup,
   FX_DEMO_SERVER,
   REGISTRY_DEMO_SERVER,
   FX_LIVE_SERVER,
@@ -125,7 +126,9 @@ export function buildEnrichment(opts: { live?: boolean } = {}): EnrichmentHandle
   // GEMINI_API_KEY etc. to a spawned child (a real third-party server especially).
   const fxClient = new ExternalMcpClient({ command: tsx, args: [fxServer] });
   const registryClient = new ExternalMcpClient({ command: tsx, args: [registryServer] });
-  const service = new EnrichmentService([new FxEnricher(fxClient, 'USD'), registryVerifier(registryClient)]);
+  // Demo/live registry is just one provider (mcpRegistryLookup); a library consumer
+  // can pass their own VerificationLookup to registryVerifier instead.
+  const service = new EnrichmentService([new FxEnricher(fxClient, 'USD'), registryVerifier(mcpRegistryLookup(registryClient))]);
   return {
     service,
     close: async () => {
@@ -141,7 +144,7 @@ export function buildEnrichment(opts: { live?: boolean } = {}): EnrichmentHandle
  */
 export async function saveToReviewQueue(
   result: PipelineResult,
-  firstImagePath: string,
+  pageImagePaths: string[],
   nPages: number,
 ): Promise<{ uploadId: string; documentId: string | null }> {
   const dbUrl = `file:${resolve(process.cwd(), '../../packages/db/prisma/dev.db')}`;
@@ -149,13 +152,21 @@ export async function saveToReviewQueue(
   try {
     const uploadId = await savePipelineResult(prisma, { sourceType: 'photo', nPages, result });
 
-    // Copy a page image for the review UI — only when there is a real raster image
-    // (raster input or a rasterized PDF page); text-format docs have none.
-    if (/\.(png|jpe?g|webp)$/i.test(firstImagePath)) {
-      const uploadsDir = resolve(process.cwd(), '../../apps/web/public/uploads');
-      mkdirSync(uploadsDir, { recursive: true });
-      await sharp(firstImagePath).png().toFile(resolve(uploadsDir, `${uploadId}.png`));
-      await prisma.upload.update({ where: { id: uploadId }, data: { imageRef: `/uploads/${uploadId}.png` } });
+    // Copy EVERY raster page image into the web public dir so multi-page docs can be
+    // paged through in review; text-format pages (no raster) become null placeholders.
+    const uploadsDir = resolve(process.cwd(), '../../apps/web/public/uploads');
+    mkdirSync(uploadsDir, { recursive: true });
+    const refs = await Promise.all(
+      pageImagePaths.map(async (p, i) => {
+        if (!/\.(png|jpe?g|webp)$/i.test(p)) return null;
+        const ref = `/uploads/${uploadId}-${i}.png`;
+        await sharp(p).png().toFile(resolve(uploadsDir, `${uploadId}-${i}.png`));
+        return ref;
+      }),
+    );
+    const firstRef = refs.find((r) => r) ?? null;
+    if (firstRef) {
+      await prisma.upload.update({ where: { id: uploadId }, data: { imageRef: firstRef, pageImageRefs: refs } });
     }
 
     const firstDoc = await prisma.document.findFirst({ where: { uploadId }, orderBy: { pageStart: 'asc' } });

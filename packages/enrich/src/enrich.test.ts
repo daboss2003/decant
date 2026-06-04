@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { DocumentResult, FxEnrichment, VerificationEnrichment } from '@decant/core';
 import { ExternalMcpClient } from './mcp-client';
 import { FxEnricher } from './enrichers';
-import { registryVerifier } from './verifiers/registry';
+import { registryVerifier, mcpRegistryLookup } from './verifiers/registry';
 import { EnrichmentService } from './enrichment.service';
 import { FX_DEMO_SERVER, REGISTRY_DEMO_SERVER } from './index';
 
@@ -48,7 +48,7 @@ const cacDoc = (companyName: string, rcNumber = 'RC123456'): DocumentResult => (
 });
 
 const verify = (client: ExternalMcpClient, doc: DocumentResult) =>
-  registryVerifier(client).enrich(doc) as Promise<VerificationEnrichment[]>;
+  registryVerifier(mcpRegistryLookup(client)).enrich(doc) as Promise<VerificationEnrichment[]>;
 
 describe('FxEnricher (consumes the FX MCP server)', () => {
   it('converts a money field into the base currency', async () => {
@@ -98,7 +98,7 @@ describe('registryVerifier (a Verifier over the registry MCP server)', () => {
 });
 
 describe('EnrichmentService (routes enrichers + folds results into the trust loop)', () => {
-  const service = () => new EnrichmentService([new FxEnricher(fxClient, 'USD', ['total']), registryVerifier(registryClient)]);
+  const service = () => new EnrichmentService([new FxEnricher(fxClient, 'USD', ['total']), registryVerifier(mcpRegistryLookup(registryClient))]);
 
   it('FX-enriches a receipt and leaves fields untouched', async () => {
     const out = await service().enrich(receiptDoc);

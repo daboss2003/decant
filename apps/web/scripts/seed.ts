@@ -67,6 +67,54 @@ const cacResult: PipelineResult = {
   ],
 };
 
+// A 2-page bank statement — demonstrates multi-page review (page navigation +
+// per-page bbox overlays). Fields carry provenance on page 0 AND page 1.
+const bankResult: PipelineResult = {
+  uploadId: 'seed-bank',
+  documents: [
+    {
+      documentId: 'seed-bank-doc',
+      docType: 'bank_statement',
+      mode: 'typed',
+      pageRange: [0, 1],
+      reclassify: false,
+      ruleResults: [],
+      fields: [
+        { fieldPath: 'bankName', value: 'Guaranty Trust Bank', confidence: 0.97, status: 'auto_approved', signals: {},
+          provenance: { pageIndex: 0, bbox: { x: 0.05, y: 0.075, w: 0.55, h: 0.07 } } },
+        { fieldPath: 'accountNumber', value: '0123456789', confidence: 0.95, status: 'auto_approved', signals: {},
+          provenance: { pageIndex: 0, bbox: { x: 0.05, y: 0.2, w: 0.42, h: 0.05 } } },
+        { fieldPath: 'openingBalance', value: 50000, confidence: 0.94, status: 'auto_approved', signals: {},
+          provenance: { pageIndex: 0, bbox: { x: 0.05, y: 0.41, w: 0.5, h: 0.05 } } },
+        { fieldPath: 'closingBalance', value: 73500, confidence: 0.15, status: 'needs_review', signals: { gateFailed: true },
+          provenance: { pageIndex: 1, bbox: { x: 0.05, y: 0.53, w: 0.5, h: 0.06 } } },
+        { fieldPath: 'currency', value: 'NGN', confidence: 0.93, status: 'auto_approved', signals: {},
+          provenance: { pageIndex: 1, bbox: { x: 0.05, y: 0.64, w: 0.3, h: 0.05 } } },
+      ],
+    },
+  ],
+};
+
+const bankPage = (n: 1 | 2, lines: string): string => `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="360">
+  <rect width="100%" height="100%" fill="#ffffff"/>
+  <g font-family="monospace" fill="#111111">
+    <text x="28" y="46" font-size="22" font-weight="bold">Guaranty Trust Bank</text>
+    <text x="360" y="46" font-size="13">Page ${n} of 2</text>
+    <line x1="28" y1="60" x2="492" y2="60" stroke="#999"/>${lines}
+  </g>
+</svg>`;
+const bankSvg0 = bankPage(1, `
+    <text x="28" y="86" font-size="15">Account No: 0123456789</text>
+    <text x="28" y="120" font-size="14">Period: 01/04/2026 to 30/04/2026   Currency: NGN</text>
+    <text x="28" y="160" font-size="16">Opening Balance            50,000.00</text>
+    <text x="28" y="200" font-size="13">03/04 POS PURCHASE     -5,000.00   45,000.00</text>
+    <text x="28" y="224" font-size="13">12/04 TRANSFER IN     +30,000.00   75,000.00</text>`);
+const bankSvg1 = bankPage(2, `
+    <text x="28" y="120" font-size="13">28/04 BANK CHARGES     -1,500.00   73,500.00</text>
+    <line x1="28" y1="180" x2="492" y2="180" stroke="#999"/>
+    <text x="28" y="206" font-size="16" font-weight="bold">Closing Balance            73,500.00</text>
+    <text x="28" y="246" font-size="15">Currency: NGN</text>`);
+
 const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="520" height="340">
   <rect width="100%" height="100%" fill="#ffffff"/>
   <g font-family="monospace" fill="#111111">
@@ -84,15 +132,25 @@ async function main(): Promise<void> {
   const uploadsDir = resolve(process.cwd(), 'public/uploads');
   mkdirSync(uploadsDir, { recursive: true });
   await sharp(Buffer.from(svg)).png().toFile(resolve(uploadsDir, 'seed-receipt.png'));
+  await sharp(Buffer.from(bankSvg0)).png().toFile(resolve(uploadsDir, 'seed-bank-0.png'));
+  await sharp(Buffer.from(bankSvg1)).png().toFile(resolve(uploadsDir, 'seed-bank-1.png'));
 
   const uploadId = await savePipelineResult(prisma, {
     sourceType: 'photo',
     nPages: 1,
     imageRef: '/uploads/seed-receipt.png',
+    pageImageRefs: ['/uploads/seed-receipt.png'],
     result,
   });
   const cacUploadId = await savePipelineResult(prisma, { sourceType: 'pdf', nPages: 1, result: cacResult });
-  console.log(`seeded uploads ${uploadId} (receipt) + ${cacUploadId} (CAC, registry mismatch) — review queue has 2 documents`);
+  const bankUploadId = await savePipelineResult(prisma, {
+    sourceType: 'pdf',
+    nPages: 2,
+    imageRef: '/uploads/seed-bank-0.png',
+    pageImageRefs: ['/uploads/seed-bank-0.png', '/uploads/seed-bank-1.png'],
+    result: bankResult,
+  });
+  console.log(`seeded uploads ${uploadId} (receipt) + ${cacUploadId} (CAC mismatch) + ${bankUploadId} (2-page bank statement) — queue has 3 documents`);
   await prisma.$disconnect();
 }
 

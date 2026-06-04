@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { DocumentResult, FxEnrichment, VerificationEnrichment } from '@decant/core';
 import { ExternalMcpClient } from './mcp-client';
 import { FxEnricher } from './enrichers';
-import { registryVerifier } from './verifiers/registry';
+import { registryVerifier, mcpRegistryLookup } from './verifiers/registry';
 import { FX_LIVE_SERVER, REGISTRY_GLEIF_SERVER } from './index';
 
 /**
@@ -58,12 +58,12 @@ describe.skipIf(!online)('live external adapters (network)', () => {
   it('Registry: GLEIF verifies a real entity and not_founds a fake one', async () => {
     const c = new ExternalMcpClient({ command: tsx, args: [REGISTRY_GLEIF_SERVER] }, clientOpts);
     clients.push(c);
-    const [real] = (await registryVerifier(c).enrich(cacDoc('Apple Inc.'))) as VerificationEnrichment[];
+    const [real] = (await registryVerifier(mcpRegistryLookup(c)).enrich(cacDoc('Apple Inc.'))) as VerificationEnrichment[];
     expect(real.status).toBe('verified');
     expect(real.authoritativeValue).toBeTruthy();
     expect(real.reference).toBeTruthy(); // anchored to a real LEI
 
-    const [fake] = (await registryVerifier(c).enrich(cacDoc('Zzqx Nonexistent Holdings 99999 Ltd'))) as VerificationEnrichment[];
+    const [fake] = (await registryVerifier(mcpRegistryLookup(c)).enrich(cacDoc('Zzqx Nonexistent Holdings 99999 Ltd'))) as VerificationEnrichment[];
     expect(fake.status).toBe('not_found');
   }, 30_000);
 });

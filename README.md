@@ -133,33 +133,47 @@ pnpm --filter @decant/cli run extract sample-receipt.png --save --enrich-live   
 | FX `open.er-api.com` | the source ISO **currency code** only | the amount (converted locally), the date |
 | Registry `api.gleif.org` | the extracted company **legal name** | the RC number (reaches the local registry child but isn't forwarded to GLEIF's name-based API), the image, amounts, and any secrets (no `process.env`/`GEMINI_API_KEY` is forwarded to spawned children) |
 
-**Add a verification source — implement one function.** Verification is a pluggable adapter: Decant owns the machinery (compare → verdict → route → audit); you supply a `lookup`. The company registry is itself just an instance. To add, say, a real CAC RC→name service, a tax-ID check, or a bank NUBAN→account-name check:
+**Add a verification source — implement one function.** Verification is a generic, pluggable adapter — **not** registry- or country-specific. Decant owns the machinery (compare → verdict → route → audit); you supply a `lookup` and which field it checks. The same primitive covers a company registry in *any* jurisdiction (NG CAC, UK Companies House, SEC, GLEIF, …), a **tax ID**, a **bank account name**, **sanctions screening**, an **address** — anything where an extracted field can be checked against an authority:
 
 ```ts
 import { makeVerifier, fieldValue, EnrichmentService } from '@decant/enrich';
 
-const cacVerifier = makeVerifier({
-  name: 'cac',
-  field: 'companyName',                               // compared + routed on failure
-  applies: (doc) => !!fieldValue(doc, 'rcNumber'),    // optional gate
-  lookup: async (doc) => {                            // ← the only thing you write
-    const rec = await myCacApi(String(fieldValue(doc, 'rcNumber')));
-    return rec ? { value: rec.name, standing: rec.status, reference: rec.rc, source: 'cac' } : null;
+// company registry (any country): id field → value field
+const ukRegistry = makeVerifier({
+  name: 'companiesHouse',
+  field: 'companyName',
+  applies: (doc) => !!fieldValue(doc, 'companyNumber'),
+  lookup: async (doc) => {
+    const rec = await myRegistryApi(String(fieldValue(doc, 'companyNumber')));   // ← the only thing you write
+    return rec ? { value: rec.name, standing: rec.status, reference: rec.number, source: 'companies-house' } : null;
     // null ⇒ not_found · throw ⇒ unavailable (both route to review — never silently dropped)
   },
 });
-new EnrichmentService([cacVerifier /*, …other verifiers/enrichers */]);
+
+// a NON-registry check, same primitive: exact-match a tax ID against an authority
+const taxId = makeVerifier({ name: 'taxId', field: 'taxId', compare: (a, b) => (a === b ? 1 : 0), lookup: myTaxLookup });
+
+new EnrichmentService([ukRegistry, taxId /*, … */]);
 ```
 
 `makeVerifier` handles the verdict, the standing gate, the trust-loop routing, the UI signal, and the audit entry. An MCP-backed source plugs in the same way via `mcpLookup(client, …)`.
+
+`registryVerifier(lookup, opts?)` is thin sugar over `makeVerifier` for the common id→value registry shape — **provider- and jurisdiction-agnostic**. The defaults (`rcNumber` → `companyName`) match the bundled CAC example; override `idField`/`valueField`/`name` for any other registry:
+
+```ts
+import { registryVerifier } from '@decant/enrich';
+
+registryVerifier(myCacLookup);                                          // NG CAC (defaults)
+registryVerifier(myUkLookup, { name: 'companiesHouse', idField: 'companyNumber' });
+```
 
 Enrichment is **best-effort** (an unreachable server never sinks an extraction); external output is zod-validated at the boundary, the FX figure is recomputed locally from the validated rate, GLEIF results are gated on entity standing and anchored to a LEI, and connects fail fast. Integration tests spawn the demo servers over stdio (`enrich.test.ts`); network-gated tests exercise the real adapters (`live.test.ts`). The implementation passed two adversarial reviews (correctness, resource safety, security/privacy).
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, the **async-pipeline seam** (in-process default + BullMQ/Redis adapter), a **real-document gold loader** (`eval --gold-dir`), a **NestJS REST API** (results / review-queue / corrections **+ async `POST /uploads`** ingest→enqueue, optional bearer auth, e2e-tested), and a **web upload UI + optional login**.
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, the **async-pipeline seam** (in-process default + BullMQ/Redis adapter), a **real-document gold loader** (`eval --gold-dir`), a **NestJS REST API** (results / review-queue / corrections **+ async `POST /uploads`** ingest→enqueue, optional bearer auth, e2e-tested), and a **web upload UI + optional login + multi-page review** (page navigation with per-page bbox overlays).
 
-**Roadmap:** multi-page review (page navigation; needs persisting all page images, not just the first) · the full per-type reliability diagram (Gemini key beyond the free-tier 20 flash/day + a larger redacted corpus) · an official CAC registry adapter when a credentialed API exists. (Redis/Postgres are consumed as managed cloud services via `REDIS_URL`/`DATABASE_URL` — note Postgres also needs the Prisma datasource `provider` switched to `postgresql`.)
+**Roadmap:** the full per-type reliability diagram (Gemini key beyond the free-tier 20 flash/day + a larger redacted corpus). The registry verifier is **provider-agnostic by design** — there is no built-in "official" registry to ship; a consumer brings their own `VerificationLookup` (GLEIF/demo are example providers). (Redis/Postgres are consumed as managed cloud services via `REDIS_URL`/`DATABASE_URL` — note Postgres also needs the Prisma datasource `provider` switched to `postgresql`.)
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 

@@ -40,6 +40,10 @@ h1 { font-size: 22px; margin: 0 0 4px; }
 
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 
+.pagenav { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.pagenav button { padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: #1c2128; color: inherit; cursor: pointer; }
+.pagenav button:disabled { opacity: 0.4; cursor: default; }
+
 .enrich { margin: 0 0 16px; }
 .enrich ul { margin: 8px 0 0; padding-left: 18px; }
 .enrich li { margin: 4px 0; }
