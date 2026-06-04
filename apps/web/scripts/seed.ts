@@ -61,7 +61,7 @@ const cacResult: PipelineResult = {
         { fieldPath: 'registrationDate', value: '2019-03-12', confidence: 0.95, status: 'auto_approved', signals: {} },
       ],
       enrichments: [
-        { kind: 'registry', rcNumber: 'RC123456', registeredName: 'Acme Nigeria Limited', extractedName: 'Zenith Holdings', nameMatchScore: 0.07, status: 'mismatch' },
+        { kind: 'verification', verifier: 'registry', field: 'companyName', extractedValue: 'Zenith Holdings', authoritativeValue: 'Acme Nigeria Limited', matchScore: 0.07, status: 'mismatch', source: 'demo' },
       ],
     },
   ],

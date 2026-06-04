@@ -26,10 +26,24 @@ function asProvenance(v: unknown): Provenance | null {
 function whyFlagged(signals: Signals): string {
   // NOTE: keys mirror what the confidence pipeline + enrichment emit (see @decant/core).
   if (signals && typeof signals === 'object') {
-    // External-source (MCP client) verdicts — the model may have been confident.
-    if (signals.registryMismatch) return 'an external company registry returned a DIFFERENT registered name — an authority disagrees with the model';
-    if (signals.registryNotFound) return 'the RC number was not found in the company registry — could not verify';
-    if (signals.registryUnavailable) return 'the company registry could not be reached — verification was not completed';
+    // External-source verification verdicts (any verifier: registry/cac/taxId/…).
+    // Signal keys are `<verifier><Mismatch|NotFound|Inactive|Unavailable>`.
+    for (const key of Object.keys(signals)) {
+      if (!signals[key]) continue;
+      const m = key.match(/^(.+?)(Mismatch|NotFound|Inactive|Unavailable)$/);
+      if (!m) continue;
+      const who = m[1];
+      switch (m[2]) {
+        case 'Mismatch':
+          return `${who} verification: an external authority returned a DIFFERENT value — it disagrees with the model`;
+        case 'NotFound':
+          return `${who} verification: not found by the authority — could not confirm`;
+        case 'Inactive':
+          return `${who} verification: found but NOT in good standing (e.g. inactive/dissolved)`;
+        case 'Unavailable':
+          return `${who} verification: the authority could not be reached — not completed`;
+      }
+    }
     if (signals.gateFailed) return 'a domain rule (GATE) failed — the value does not reconcile';
     if (signals.signalFailed) return 'a soft check (SIGNAL) failed';
     if (signals.generic) return 'extracted via the generic fallback (low trust)';
@@ -83,11 +97,14 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           <strong>External verification</strong> <span className="muted">(MCP client → registry / FX)</span>
           <ul>
             {enrichments.map((e, i) =>
-              e.kind === 'registry' ? (
+              e.kind === 'verification' ? (
                 <li key={i}>
-                  Company registry: <span className={`pill ${e.status === 'verified' ? 'ok' : 'review'}`}>{e.status.replace('_', ' ')}</span>
-                  {e.registeredName ? ` — registered “${e.registeredName}” vs extracted “${e.extractedName ?? '—'}”` : ''}
-                  {e.status === 'mismatch' ? ` · name match ${e.nameMatchScore.toFixed(2)}` : ''}
+                  {e.verifier} ({e.field}){e.source ? ` via ${e.source}` : ''}:{' '}
+                  <span className={`pill ${e.status === 'verified' ? 'ok' : 'review'}`}>{e.status.replace('_', ' ')}</span>
+                  {e.authoritativeValue ? ` — “${e.authoritativeValue}” vs extracted “${e.extractedValue ?? '—'}”` : ''}
+                  {e.status === 'mismatch' ? ` · match ${e.matchScore.toFixed(2)}` : ''}
+                  {e.standing ? ` · standing ${e.standing}` : ''}
+                  {e.reference ? ` · ref ${e.reference}` : ''}
                 </li>
               ) : (
                 <li key={i}>
@@ -152,9 +169,13 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
                 <div>
                   <span className="val">{displayValue(f.value)}</span>{' '}
                   <span className="conf">conf {f.confidence.toFixed(2)}</span>
-                  {(f.signals as Signals)?.registryVerified && (
-                    <span className="pill ok" title="corroborated by an external company registry">✓ registry-verified</span>
-                  )}
+                  {Object.keys((f.signals as Signals) ?? {})
+                    .filter((k) => /Verified$/.test(k) && (f.signals as Signals)?.[k])
+                    .map((k) => (
+                      <span key={k} className="pill ok" title="corroborated by an external authority">
+                        ✓ {k.replace(/Verified$/, '')}-verified
+                      </span>
+                    ))}
                 </div>
 
                 {flagged && (

@@ -26,28 +26,56 @@ export interface FxEnrichment {
   asOf: string;
 }
 
-export type RegistryStatus =
-  | 'verified' // RC found and the registered name matches the extracted one
-  | 'mismatch' // RC found but the names disagree (an authority contradicts us)
-  | 'not_found' // RC not in the registry (could not confirm)
-  | 'unavailable'; // the registry could not be reached/queried (attempted, not skipped)
+export type VerificationStatus =
+  | 'verified' // found, value matches, AND the record is in good standing
+  | 'mismatch' // found but the values disagree (an authority contradicts us)
+  | 'not_found' // the key is not on file with the authority (could not confirm)
+  | 'inactive' // found and value matches but the record is not in good standing (e.g. dissolved)
+  | 'unavailable'; // the authority could not be reached/queried (attempted, not skipped)
 
-export interface RegistryEnrichment {
-  kind: 'registry';
-  rcNumber: string;
-  /** The authoritative name from the registry; null when the RC number is unknown. */
-  registeredName: string | null;
-  /** The name we extracted from the document. */
-  extractedName: string | null;
-  /** 0..1 similarity between extracted and registered names. */
-  nameMatchScore: number;
-  status: RegistryStatus;
+/**
+ * The outcome of cross-checking one extracted field against an external authority.
+ * Source-agnostic: the SAME shape describes a company-registry check, a tax-ID
+ * check, a bank-account-name check, … (see `makeVerifier` in @decant/enrich — a
+ * consumer adds a source by implementing one lookup function).
+ */
+export interface VerificationEnrichment {
+  kind: 'verification';
+  /** Which verifier produced this (drives the signal/audit key), e.g. 'registry', 'cac', 'taxId'. */
+  verifier: string;
+  /** The document field this verdict applies to and routes on failure (e.g. 'companyName'). */
+  field: string;
+  /** The value we extracted for `field`. */
+  extractedValue: string | null;
+  /** The authoritative value from the source; null when not found. */
+  authoritativeValue: string | null;
+  /** 0..1 similarity between extracted and authoritative values. */
+  matchScore: number;
+  status: VerificationStatus;
+  /** The record's standing as reported by the source (e.g. ACTIVE/INACTIVE), if any. */
+  standing?: string | null;
+  /** Which source answered (e.g. 'gleif', 'cac', 'demo') — for the audit trail. */
+  source?: string;
+  /** An anchoring reference for the matched record (e.g. a GLEIF LEI, a registry URL/id). */
+  reference?: string | null;
 }
 
-export type Enrichment = FxEnrichment | RegistryEnrichment;
+/** What a consumer's lookup returns: the authoritative record (or null ⇒ not found). */
+export interface AuthorityRecord {
+  /** The canonical value to compare against the extracted field (e.g. the registered name). */
+  value: string | null;
+  /** Optional standing/status; an explicit non-active value yields `inactive`. */
+  standing?: string | null;
+  /** Optional anchoring reference for the audit trail. */
+  reference?: string | null;
+  /** Optional source label (e.g. 'cac', 'gleif'). */
+  source?: string;
+}
 
-/** A name match at or above this score is treated as a registry-verified company. */
-export const REGISTRY_NAME_MATCH_THRESHOLD = 0.8;
+export type Enrichment = FxEnrichment | VerificationEnrichment;
+
+/** A value match at or above this score is treated as verified. */
+export const VERIFICATION_MATCH_THRESHOLD = 0.8;
 
 const CORP_SUFFIXES = new Set(['ltd', 'limited', 'plc', 'inc', 'incorporated', 'llc', 'llp', 'co', 'company']);
 
@@ -105,54 +133,79 @@ export function compareNames(a: string, b: string): number {
   return Math.max(jaccard, lenRatio);
 }
 
-/** Build a RegistryEnrichment from a lookup result + the extracted name. */
-export function buildRegistryEnrichment(params: {
-  rcNumber: string;
-  registeredName: string | null;
-  extractedName: string | null;
-}): RegistryEnrichment {
-  const { rcNumber, registeredName, extractedName } = params;
-  if (registeredName == null) {
-    return { kind: 'registry', rcNumber, registeredName: null, extractedName, nameMatchScore: 0, status: 'not_found' };
-  }
-  const score = extractedName ? compareNames(extractedName, registeredName) : 0;
-  return {
-    kind: 'registry',
-    rcNumber,
-    registeredName,
-    extractedName,
-    nameMatchScore: score,
-    status: score >= REGISTRY_NAME_MATCH_THRESHOLD ? 'verified' : 'mismatch',
-  };
+/** An explicit non-active standing means NOT in good standing; null/unknown is given the benefit of the doubt. */
+function isGoodStanding(standing: string | null | undefined): boolean {
+  if (standing == null || standing.trim() === '') return true;
+  return standing.trim().toUpperCase() === 'ACTIVE';
 }
 
 /**
- * Fold enrichment outcomes back onto a document's fields (pure). The registry
- * verdict drives the company name's routing with a DISTINCT signal per outcome,
- * so a reviewer can tell apart "an authority contradicts the name" (mismatch),
- * "the RC number isn't on file" (not_found), and "we couldn't reach the registry"
- * (unavailable) — all route to review (external-source safe failure), while a
- * verified match records a positive `registryVerified` corroboration signal
- * without changing status. Returns a new DocumentResult with the enrichments
- * attached. Confidence is left untouched (the model's own certainty stays honest;
- * the routing reason is external).
+ * Decide a verification verdict from an authoritative record + the extracted value
+ * (pure). `record == null` ⇒ not_found. A value match only "verifies" if the
+ * record is also in good standing; a matched-but-not-active record is `inactive`.
+ * `compare` defaults to the name comparator but a consumer can pass an exact/custom
+ * one (e.g. for IDs). For an unreachable source, use `unavailableVerification`.
+ */
+export function buildVerification(params: {
+  verifier: string;
+  field: string;
+  extractedValue: string | null;
+  record: AuthorityRecord | null;
+  threshold?: number;
+  compare?: (a: string, b: string) => number;
+}): VerificationEnrichment {
+  const { verifier, field, extractedValue, record, threshold = VERIFICATION_MATCH_THRESHOLD, compare = compareNames } = params;
+  const base = {
+    kind: 'verification' as const,
+    verifier,
+    field,
+    extractedValue,
+    standing: record?.standing ?? null,
+    source: record?.source,
+    reference: record?.reference ?? null,
+  };
+  if (!record || record.value == null) {
+    return { ...base, authoritativeValue: null, matchScore: 0, status: 'not_found' };
+  }
+  const score = extractedValue ? compare(extractedValue, record.value) : 0;
+  const status: VerificationStatus =
+    score < threshold ? 'mismatch' : isGoodStanding(record.standing) ? 'verified' : 'inactive';
+  return { ...base, authoritativeValue: record.value, matchScore: score, status };
+}
+
+/** A verification verdict for a source that could not be reached/queried (attempted, not skipped). */
+export function unavailableVerification(verifier: string, field: string, extractedValue: string | null, source?: string): VerificationEnrichment {
+  return { kind: 'verification', verifier, field, extractedValue, authoritativeValue: null, matchScore: 0, status: 'unavailable', source, standing: null, reference: null };
+}
+
+/**
+ * Fold enrichment outcomes back onto a document's fields (pure). Each verification
+ * verdict routes its `field` with a DISTINCT, verifier-scoped signal so a reviewer
+ * can tell apart "an authority contradicts us" (mismatch), "not on file"
+ * (not_found), "found but not in good standing" (inactive), and "couldn't reach
+ * the source" (unavailable) — all route to review (external-source safe failure),
+ * while a verified match records a positive `<verifier>Verified` corroboration
+ * signal without changing status. Confidence is left untouched (the model's own
+ * certainty stays honest; the routing reason is external). Signal keys are
+ * `<verifier>Verified|Mismatch|NotFound|Inactive|Unavailable`.
  */
 export function applyEnrichment(doc: DocumentResult, enrichments: Enrichment[]): DocumentResult {
-  const registry = enrichments.find((e): e is RegistryEnrichment => e.kind === 'registry');
+  const verifications = enrichments.filter((e): e is VerificationEnrichment => e.kind === 'verification');
   const review = 'needs_review' as const;
+  const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
-  const fields = doc.fields.map((f) => {
-    if (!registry || f.fieldPath !== 'companyName') return f;
-    switch (registry.status) {
-      case 'verified':
-        return { ...f, signals: { ...f.signals, registryVerified: true } };
-      case 'mismatch':
-        return { ...f, status: review, signals: { ...f.signals, registryMismatch: true } };
-      case 'not_found':
-        return { ...f, status: review, signals: { ...f.signals, registryNotFound: true } };
-      case 'unavailable':
-        return { ...f, status: review, signals: { ...f.signals, registryUnavailable: true } };
+  const fields = doc.fields.map((f0) => {
+    let f = f0;
+    for (const v of verifications) {
+      if (v.field !== f.fieldPath) continue;
+      if (v.status === 'verified') {
+        f = { ...f, signals: { ...f.signals, [`${v.verifier}Verified`]: true } };
+      } else {
+        // mismatch | not_found | inactive | unavailable → route to review with a scoped signal
+        f = { ...f, status: review, signals: { ...f.signals, [`${v.verifier}${cap(v.status === 'not_found' ? 'notFound' : v.status)}`]: true } };
+      }
     }
+    return f;
   });
 
   return { ...doc, fields, enrichments };

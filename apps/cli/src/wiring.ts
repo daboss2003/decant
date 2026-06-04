@@ -19,9 +19,11 @@ import {
   ExternalMcpClient,
   EnrichmentService,
   FxEnricher,
-  RegistryEnricher,
+  registryVerifier,
   FX_DEMO_SERVER,
   REGISTRY_DEMO_SERVER,
+  FX_LIVE_SERVER,
+  REGISTRY_GLEIF_SERVER,
 } from '@decant/enrich';
 import { createPrismaClient, savePipelineResult } from '@decant/db';
 
@@ -104,18 +106,21 @@ export interface EnrichmentHandle {
 }
 
 /**
- * Wire the MCP *client*-role enrichment (plan §8) against the bundled demo
- * registry + FX servers, spawned over stdio. Decant consumes other MCP servers
- * the same way an MCP host consumes Decant.
+ * Wire the MCP *client*-role enrichment (plan §8), spawning the FX + registry
+ * MCP servers over stdio. `live` swaps the deterministic demo servers for real
+ * ones (open.er-api.com FX + GLEIF registry). Decant consumes these the same way
+ * an MCP host consumes Decant.
  */
-export function buildEnrichment(): EnrichmentHandle {
+export function buildEnrichment(opts: { live?: boolean } = {}): EnrichmentHandle {
   const tsx = resolve(here, '../node_modules/.bin/tsx');
+  const fxServer = opts.live ? FX_LIVE_SERVER : FX_DEMO_SERVER;
+  const registryServer = opts.live ? REGISTRY_GLEIF_SERVER : REGISTRY_DEMO_SERVER;
   // No `env` — the SDK's default allowlist (PATH/HOME/…) already lets tsx run, and
-  // the demo servers need nothing more. Never forward process.env: it would leak
+  // these servers need nothing more. Never forward process.env: it would leak
   // GEMINI_API_KEY etc. to a spawned child (a real third-party server especially).
-  const fxClient = new ExternalMcpClient({ command: tsx, args: [FX_DEMO_SERVER] });
-  const registryClient = new ExternalMcpClient({ command: tsx, args: [REGISTRY_DEMO_SERVER] });
-  const service = new EnrichmentService([new FxEnricher(fxClient, 'USD'), new RegistryEnricher(registryClient)]);
+  const fxClient = new ExternalMcpClient({ command: tsx, args: [fxServer] });
+  const registryClient = new ExternalMcpClient({ command: tsx, args: [registryServer] });
+  const service = new EnrichmentService([new FxEnricher(fxClient, 'USD'), registryVerifier(registryClient)]);
   return {
     service,
     close: async () => {

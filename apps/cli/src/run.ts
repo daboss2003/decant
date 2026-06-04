@@ -8,10 +8,11 @@ async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   const save = argv.includes('--save');
   const ocr = argv.includes('--ocr');
-  const enrich = argv.includes('--enrich');
+  const enrichLive = argv.includes('--enrich-live');
+  const enrich = enrichLive || argv.includes('--enrich');
   const files = argv.filter((a) => !a.startsWith('--')).map((f) => resolve(f));
   if (files.length === 0) {
-    console.error('usage: tsx src/run.ts <image-or-pdf> [more pages…] [--save] [--ocr] [--enrich]');
+    console.error('usage: tsx src/run.ts <image-or-pdf> [more pages…] [--save] [--ocr] [--enrich|--enrich-live]');
     process.exit(1);
   }
 
@@ -27,12 +28,17 @@ async function main(): Promise<void> {
       ? `calibrated: ${calibration.method}`
       : 'calibrated: per-type';
   console.error(
-    `Processing ${files.length} page(s) through the pipeline (${calLabel}${ocr ? ', OCR provenance' : ''}${enrich ? ', MCP enrichment' : ''})…\n`,
+    `Processing ${files.length} page(s) through the pipeline (${calLabel}${ocr ? ', OCR provenance' : ''}${enrich ? `, MCP enrichment (${enrichLive ? 'live' : 'demo'})` : ''})…\n`,
   );
   let result = await pipeline.process(uploadId, pages);
 
   if (enrich) {
-    const { service, close } = buildEnrichment();
+    if (enrichLive) {
+      console.error(
+        'Live enrichment ON: currency codes → open.er-api.com, company names → api.gleif.org. No money amounts and no secrets (e.g. GEMINI_API_KEY) are sent.',
+      );
+    }
+    const { service, close } = buildEnrichment({ live: enrichLive });
     try {
       const documents = await Promise.all(result.documents.map((d) => service.enrich(d)));
       result = { ...result, documents };
@@ -56,7 +62,7 @@ async function main(): Promise<void> {
       const summary = doc.enrichments.map((e) =>
         e.kind === 'fx'
           ? `fx ${e.field} ≈ ${e.baseAmount} ${e.base}`
-          : `registry ${e.status}${e.registeredName ? ` (${e.registeredName})` : ''}`,
+          : `${e.verifier}(${e.field}) ${e.status}${e.authoritativeValue ? ` → ${e.authoritativeValue}` : ''}`,
       );
       console.log(`  enrichment: ${summary.join('; ')}`);
     }

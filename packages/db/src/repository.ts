@@ -66,7 +66,7 @@ export async function savePipelineResult(
             type: 'enriched',
             actor: 'system',
             payload: toJson({
-              sources: d.enrichments.map((e) => (e.kind === 'registry' ? `registry:${e.status}` : `fx:${e.field}`)),
+              sources: d.enrichments.map((e) => (e.kind === 'verification' ? `${e.verifier}:${e.status}` : `fx:${e.field}`)),
             }),
           },
         });

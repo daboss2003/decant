@@ -22,12 +22,12 @@ mcp.registerTool(
   {
     title: 'Look up a company',
     description: 'Look up a company by its registration (RC) number; returns the authoritative registered name + status.',
-    inputSchema: { rcNumber: z.string() },
+    inputSchema: { rcNumber: z.string(), name: z.string().optional() }, // name accepted for contract parity (unused here)
   },
   async ({ rcNumber }) => {
     const rec = REGISTRY[rcNumber.toUpperCase().replace(/\s+/g, '')];
-    if (!rec) return json({ rcNumber, found: false, name: null, status: null });
-    return json({ rcNumber, found: true, name: rec.name, status: rec.status });
+    if (!rec) return json({ rcNumber, found: false, name: null, status: null, source: 'demo' });
+    return json({ rcNumber, found: true, name: rec.name, status: rec.status, source: 'demo' });
   },
 );
 

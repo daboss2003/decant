@@ -24,7 +24,7 @@ A document classifies to a **registered type** (receipt/invoice, bank statement,
 | `packages/core` | Transport-agnostic domain core: registry, segmentation, rules, confidence, routing, the pipeline orchestrator |
 | `packages/gemini` | `@google/genai`-backed Classify + Extract services (the SDK behind a mockable interface) |
 | `packages/ocr` | tesseract.js `OcrProvider` → per-field bbox provenance (fuzzy-aligned to each value, independent of the model's claim) |
-| `packages/enrich` | the **MCP client role**: consume external MCP servers (company registry, FX) to enrich + verify extracted data (+ bundled demo servers) |
+| `packages/enrich` | the **MCP client role** + a **pluggable verification adapter** (`makeVerifier` — add a source by implementing one `lookup`); FX enrichment + company-registry verification, with bundled demo and real (open.er-api/GLEIF) servers |
 | `packages/db` | Prisma + SQLite persistence + the audit-trail-writing `ReviewService` |
 | `packages/eval` | Gold scoring + success metrics (field accuracy, reliability/ECE/Brier, safe-failure rate, threshold sweep) |
 | `apps/cli` | Run extraction / eval against real Gemini |
@@ -106,19 +106,47 @@ The marquee: when `review_document` hits a flagged field it **elicits** a struct
 Decant is also an MCP **client**: after extraction it connects OUT to external MCP servers to **enrich** and **verify** data (`packages/enrich`, bundled deterministic demo servers under `src/demo/`).
 
 - **FX** — convert money fields into a base currency (enrichment).
-- **Registry** — look up a CAC `rcNumber` and compare the registered name to the extracted one. A **mismatch routes `companyName` to human review** — an external-source *safe failure* that feeds the same trust loop; `not_found` and `unavailable` (registry unreachable) route too, each with a distinct signal so "couldn't verify" is never mistaken for "verified"; a match records a `registryVerified` corroboration. The verdict is **surfaced in the review UI** (an "External verification" panel + an honest "Why" reason) and persisted to `Document.enrichment` with an `enriched` audit event.
+- **Verification** — cross-check an extracted field against an authority. The built-in **company registry** verifier compares the registered name to the extracted `companyName`; a **mismatch routes the field to human review** — an external-source *safe failure* that feeds the same trust loop. Verdicts: `verified` (found, value matches, **and** in good standing), `mismatch`, `not_found`, `inactive` (found but dissolved), `unavailable` (source unreachable) — each with its own signal so "couldn't verify" is never mistaken for "verified". A verified match records a `<verifier>Verified` corroboration plus the answering `source` and an anchoring reference (e.g. a GLEIF LEI). Surfaced in the review UI ("External verification" panel + an honest "Why") and persisted to `Document.enrichment` with an `enriched` audit event.
 
 ```bash
-pnpm --filter @decant/cli run extract sample-receipt.png --save --enrich   # FX + registry verification
+pnpm --filter @decant/cli run extract sample-receipt.png --save --enrich        # deterministic demo servers
+pnpm --filter @decant/cli run extract sample-receipt.png --save --enrich-live   # REAL servers (see egress below)
 ```
 
-Enrichment is **best-effort** (an unreachable server never sinks an extraction) and treats external servers as untrusted: outputs are schema-validated, no secrets are forwarded to spawned children, and connects fail fast. Integration tests (`packages/enrich/src/enrich.test.ts`) spawn the demo servers over stdio and assert FX + the registry verdicts (incl. unavailable); the pure compare/fold-back logic lives in `@decant/core`. The implementation passed an adversarial review (correctness, resource safety, security/privacy).
+**Live mode & data egress (opt-in, OFF by default).** `--enrich-live` (or `buildEnrichment({ live: true })`) swaps the deterministic demo servers for **real** ones — `open.er-api.com` (FX, free/no-key) and **GLEIF** (`api.gleif.org`, the free global legal-entity registry). Plain `--enrich` and all tests/CI stay fully local/deterministic. What leaves the process when live:
+
+| Provider | Sent | NOT sent |
+|---|---|---|
+| FX `open.er-api.com` | the source ISO **currency code** only | the amount (converted locally), the date |
+| Registry `api.gleif.org` | the extracted company **legal name** | the RC number (reaches the local registry child but isn't forwarded to GLEIF's name-based API), the image, amounts, and any secrets (no `process.env`/`GEMINI_API_KEY` is forwarded to spawned children) |
+
+**Add a verification source — implement one function.** Verification is a pluggable adapter: Decant owns the machinery (compare → verdict → route → audit); you supply a `lookup`. The company registry is itself just an instance. To add, say, a real CAC RC→name service, a tax-ID check, or a bank NUBAN→account-name check:
+
+```ts
+import { makeVerifier, fieldValue, EnrichmentService } from '@decant/enrich';
+
+const cacVerifier = makeVerifier({
+  name: 'cac',
+  field: 'companyName',                               // compared + routed on failure
+  applies: (doc) => !!fieldValue(doc, 'rcNumber'),    // optional gate
+  lookup: async (doc) => {                            // ← the only thing you write
+    const rec = await myCacApi(String(fieldValue(doc, 'rcNumber')));
+    return rec ? { value: rec.name, standing: rec.status, reference: rec.rc, source: 'cac' } : null;
+    // null ⇒ not_found · throw ⇒ unavailable (both route to review — never silently dropped)
+  },
+});
+new EnrichmentService([cacVerifier /*, …other verifiers/enrichers */]);
+```
+
+`makeVerifier` handles the verdict, the standing gate, the trust-loop routing, the UI signal, and the audit entry. An MCP-backed source plugs in the same way via `mcpLookup(client, …)`.
+
+Enrichment is **best-effort** (an unreachable server never sinks an extraction); external output is zod-validated at the boundary, the FX figure is recomputed locally from the validated rate, GLEIF results are gated on entity standing and anchored to a LEI, and connects fail fast. Integration tests spawn the demo servers over stdio (`enrich.test.ts`); network-gated tests exercise the real adapters (`live.test.ts`). The implementation passed two adversarial reviews (correctness, resource safety, security/privacy).
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), and the **MCP client role** (external registry/FX enrichment + verification feeding the trust loop).
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), and the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry) feeding the trust loop.
 
-**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day) · real external registry/FX adapters (the demo servers are deterministic stand-ins).
+**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day) · an official CAC (RC-number → name) registry adapter when a credentialed API is available (GLEIF stands in as a real, name-based registry today).
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 

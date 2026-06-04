@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { DocumentResult, FxEnrichment, RegistryEnrichment } from '@decant/core';
+import type { DocumentResult, FxEnrichment, VerificationEnrichment } from '@decant/core';
 import { ExternalMcpClient } from './mcp-client';
-import { FxEnricher, RegistryEnricher } from './enrichers';
+import { FxEnricher } from './enrichers';
+import { registryVerifier } from './verifiers/registry';
 import { EnrichmentService } from './enrichment.service';
 import { FX_DEMO_SERVER, REGISTRY_DEMO_SERVER } from './index';
 
@@ -46,6 +47,9 @@ const cacDoc = (companyName: string, rcNumber = 'RC123456'): DocumentResult => (
   fields: [field('rcNumber', rcNumber), field('companyName', companyName)],
 });
 
+const verify = (client: ExternalMcpClient, doc: DocumentResult) =>
+  registryVerifier(client).enrich(doc) as Promise<VerificationEnrichment[]>;
+
 describe('FxEnricher (consumes the FX MCP server)', () => {
   it('converts a money field into the base currency', async () => {
     const [e] = (await new FxEnricher(fxClient, 'USD', ['total']).enrich(receiptDoc)) as FxEnrichment[];
@@ -57,27 +61,35 @@ describe('FxEnricher (consumes the FX MCP server)', () => {
   });
 });
 
-describe('RegistryEnricher (consumes the registry MCP server)', () => {
+describe('registryVerifier (a Verifier over the registry MCP server)', () => {
   it('verifies a matching company name', async () => {
-    const [e] = (await new RegistryEnricher(registryClient).enrich(cacDoc('Acme Nigeria Ltd'))) as RegistryEnrichment[];
+    const [e] = await verify(registryClient, cacDoc('Acme Nigeria Ltd'));
     expect(e.status).toBe('verified');
-    expect(e.registeredName).toBe('Acme Nigeria Limited');
+    expect(e.verifier).toBe('registry');
+    expect(e.field).toBe('companyName');
+    expect(e.authoritativeValue).toBe('Acme Nigeria Limited');
   });
 
   it('flags a mismatched company name', async () => {
-    const [e] = (await new RegistryEnricher(registryClient).enrich(cacDoc('Zenith Holdings'))) as RegistryEnrichment[];
+    const [e] = await verify(registryClient, cacDoc('Zenith Holdings'));
     expect(e.status).toBe('mismatch');
   });
 
   it('reports not_found for an unknown RC number', async () => {
-    const [e] = (await new RegistryEnricher(registryClient).enrich(cacDoc('Acme', 'RC999999'))) as RegistryEnrichment[];
+    const [e] = await verify(registryClient, cacDoc('Acme', 'RC999999'));
     expect(e.status).toBe('not_found');
+  });
+
+  it('marks a name-matching but INACTIVE company as inactive (safe failure, not verified)', async () => {
+    const [e] = await verify(registryClient, cacDoc('Initech Systems Ltd', 'RC222333'));
+    expect(e.status).toBe('inactive');
+    expect(e.source).toBe('demo');
   });
 
   it('records unavailable (not a silent skip) when the registry server cannot be reached', async () => {
     const dead = new ExternalMcpClient({ command: tsx, args: [resolve(here, 'does-not-exist.ts')] }, { connectTimeoutMs: 4000 });
     try {
-      const [e] = (await new RegistryEnricher(dead).enrich(cacDoc('Acme'))) as RegistryEnrichment[];
+      const [e] = await verify(dead, cacDoc('Acme'));
       expect(e.status).toBe('unavailable');
     } finally {
       await dead.close();
@@ -86,12 +98,12 @@ describe('RegistryEnricher (consumes the registry MCP server)', () => {
 });
 
 describe('EnrichmentService (routes enrichers + folds results into the trust loop)', () => {
-  const service = () => new EnrichmentService([new FxEnricher(fxClient, 'USD', ['total']), new RegistryEnricher(registryClient)]);
+  const service = () => new EnrichmentService([new FxEnricher(fxClient, 'USD', ['total']), registryVerifier(registryClient)]);
 
   it('FX-enriches a receipt and leaves fields untouched', async () => {
     const out = await service().enrich(receiptDoc);
     expect(out.enrichments?.some((e) => e.kind === 'fx')).toBe(true);
-    expect(out.enrichments?.some((e) => e.kind === 'registry')).toBe(false); // no rcNumber
+    expect(out.enrichments?.some((e) => e.kind === 'verification')).toBe(false); // no rcNumber
   });
 
   it('a registry mismatch routes companyName to review (safe failure via an external source)', async () => {
