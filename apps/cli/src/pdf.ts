@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as mupdf from 'mupdf';
-import { isTextFormat, loadDocumentText, renderTextPreview } from './doc-text';
+import { isTextFormat, loadDocumentText } from './doc-text';
 
 export const isPdf = (path: string): boolean => path.toLowerCase().endsWith('.pdf');
 
@@ -66,11 +66,7 @@ export async function extractPdfText(pdfPath: string): Promise<string[]> {
 export async function toPages(paths: string[]): Promise<{ images: string[]; texts: string[] }> {
   const images: string[] = [];
   const texts: string[] = [];
-  let dir: string | undefined;
-  const tmp = (name: string): string => (dir ??= mkdtempSync(join(tmpdir(), 'decant-ingest-'))) && join(dir, name);
-
-  for (let n = 0; n < paths.length; n++) {
-    const p = paths[n]!;
+  for (const p of paths) {
     if (isPdf(p)) {
       const [imgs, txts] = await Promise.all([rasterizePdf(p), extractPdfText(p)]);
       imgs.forEach((img, i) => {
@@ -79,12 +75,9 @@ export async function toPages(paths: string[]): Promise<{ images: string[]; text
       });
     } else if (isTextFormat(p)) {
       // Born-digital text format (md/html/xml/svg/txt/csv/…): read the exact text
-      // (no AI), render a preview PNG so classify still has an image.
-      const text = (await loadDocumentText(p)) ?? '';
-      const png = tmp(`text-${n}.png`);
-      writeFileSync(png, await renderTextPreview(text));
-      images.push(png);
-      texts.push(text);
+      // (no AI). NO image is produced — classify + extract both run from the text.
+      images.push(p); // the source ref (not loaded as an image on the text path)
+      texts.push((await loadDocumentText(p)) ?? '');
     } else {
       images.push(p);
       texts.push(''); // a raster image has no text layer → vision/OCR path

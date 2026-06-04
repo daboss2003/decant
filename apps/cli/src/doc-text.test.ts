@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import sharp from 'sharp';
-import { isTextFormat, loadDocumentText, renderTextPreview } from './doc-text';
+import { isTextFormat, loadDocumentText } from './doc-text';
 
 const tmpFile = (name: string, content: string): string => {
   const p = join(mkdtempSync(join(tmpdir(), 'decant-doctext-')), name);
@@ -41,11 +40,5 @@ describe('multi-format text ingestion (no AI/OCR)', () => {
 
   it('returns null for unsupported (binary) formats', async () => {
     expect(await loadDocumentText('/x/scan.png')).toBeNull();
-  });
-
-  it('renders a preview PNG for the classify step', async () => {
-    const meta = await sharp(await renderTextPreview('Hello\nWorld\nTOTAL 500')).metadata();
-    expect(meta.format).toBe('png');
-    expect(meta.width).toBeGreaterThan(0);
   });
 });

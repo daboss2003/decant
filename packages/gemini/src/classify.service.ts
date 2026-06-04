@@ -3,7 +3,10 @@ import { ClassifyOutput, type PageClassification } from '@decant/schemas';
 import { toGeminiSchema, type ClassifyService, type PageInput } from '@decant/core';
 import type { GeminiClient } from './client';
 import type { PageImageStore } from './images';
-import { classifyPrompt } from './prompts';
+import { classifyPrompt, classifyTextPrompt } from './prompts';
+
+/** A page with at least this much text is classified from text (no image). */
+const MIN_PAGE_TEXT_CHARS = 12;
 
 /**
  * Real ClassifyService (plan §2 stage 3): ONE batched Gemini Flash-Lite call
@@ -48,14 +51,27 @@ export class GeminiClassifyService implements ClassifyService {
     this.schema = toGeminiSchema(z.toJSONSchema(ClassifyOutput));
   }
 
-  async classify(_uploadId: string, pages: PageInput[]): Promise<ClassifyOutput> {
-    const images = await Promise.all(pages.map((p) => this.images.loadByRef(p.imageRef)));
+  async classify(uploadId: string, pages: PageInput[]): Promise<ClassifyOutput> {
     const pageIndices = pages.map((p) => p.pageIndex);
+
+    // Born-digital pages already have their text — classify from it (no image, cheaper).
+    // Vision is the fallback only for scanned/image pages with no text layer.
+    const texts = (this.images.loadText ? await this.images.loadText(uploadId, pageIndices) : []).map((t) => t.trim());
+    const useText = texts.length === pages.length && texts.every((t) => t.length >= MIN_PAGE_TEXT_CHARS);
+
+    const req = useText
+      ? {
+          userText: classifyTextPrompt(this.config.knownTypes, pageIndices.map((pageIndex, i) => ({ pageIndex, text: texts[i]! }))),
+          images: [],
+        }
+      : {
+          userText: classifyPrompt(this.config.knownTypes, pageIndices),
+          images: await Promise.all(pages.map((p) => this.images.loadByRef(p.imageRef))),
+        };
 
     const text = await this.client.generateJson({
       model: this.model,
-      userText: classifyPrompt(this.config.knownTypes, pageIndices),
-      images,
+      ...req,
       responseJsonSchema: this.schema,
       temperature: this.config.temperature,
     });

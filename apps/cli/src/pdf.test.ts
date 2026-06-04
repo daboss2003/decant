@@ -58,12 +58,12 @@ describe('extractPdfText (born-digital text layer, no AI)', () => {
     expect(texts[1]).toBe(''); // image → no text layer
   }, 30_000);
 
-  it('toPages handles a text format (md): exact text + a rendered preview image', async () => {
+  it('toPages handles a text format (md): exact text, NO image rendered', async () => {
     const md = join(mkdtempSync(join(tmpdir(), 'decant-md-')), 'r.md');
     writeFileSync(md, '# Receipt\nTOTAL 500');
     const { images, texts } = await toPages([md]);
     expect(images).toHaveLength(1);
-    expect(images[0]).toMatch(/\.png$/); // rendered preview for classify
-    expect(texts[0]).toContain('TOTAL 500'); // exact text for extraction
+    expect(images[0]).toBe(md); // source ref kept; no fake image produced
+    expect(texts[0]).toContain('TOTAL 500'); // exact text for classify + extraction
   }, 30_000);
 });

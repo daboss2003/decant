@@ -149,10 +149,14 @@ export async function saveToReviewQueue(
   try {
     const uploadId = await savePipelineResult(prisma, { sourceType: 'photo', nPages, result });
 
-    const uploadsDir = resolve(process.cwd(), '../../apps/web/public/uploads');
-    mkdirSync(uploadsDir, { recursive: true });
-    await sharp(firstImagePath).png().toFile(resolve(uploadsDir, `${uploadId}.png`)); // images only (PDFs would need rasterizing)
-    await prisma.upload.update({ where: { id: uploadId }, data: { imageRef: `/uploads/${uploadId}.png` } });
+    // Copy a page image for the review UI — only when there is a real raster image
+    // (raster input or a rasterized PDF page); text-format docs have none.
+    if (/\.(png|jpe?g|webp)$/i.test(firstImagePath)) {
+      const uploadsDir = resolve(process.cwd(), '../../apps/web/public/uploads');
+      mkdirSync(uploadsDir, { recursive: true });
+      await sharp(firstImagePath).png().toFile(resolve(uploadsDir, `${uploadId}.png`));
+      await prisma.upload.update({ where: { id: uploadId }, data: { imageRef: `/uploads/${uploadId}.png` } });
+    }
 
     const firstDoc = await prisma.document.findFirst({ where: { uploadId }, orderBy: { pageStart: 'asc' } });
     return { uploadId, documentId: firstDoc?.id ?? null };

@@ -51,4 +51,18 @@ describe('GeminiClassifyService', () => {
     const out = await svc.classify('u1', pages);
     expect(out.pages.every((p) => p.docType === 'unknown' && p.confidence === 0)).toBe(true);
   });
+
+  it('classifies from the TEXT layer when present — no image sent (born-digital)', async () => {
+    const textStore = new InMemoryPageImageStore(
+      new Map(),
+      new Map(),
+      new Map([['u1', ['CAFE NEABLE receipt — TOTAL 500 NGN', 'continued statement rows…']]]),
+    );
+    const client = new FakeClient('{"pages":[{"pageIndex":0,"docType":"receipt","confidence":0.9},{"pageIndex":1,"docType":"receipt","confidence":0.8}]}');
+    const svc = new GeminiClassifyService(client, textStore, { knownTypes: ['receipt'] });
+    const out = await svc.classify('u1', pages);
+    expect(out.pages[0]?.docType).toBe('receipt');
+    expect(client.requests[0]?.images).toHaveLength(0); // text path → no vision
+    expect(client.requests[0]?.userText).toContain('CAFE NEABLE'); // classified from the text
+  });
 });
