@@ -1,29 +1,25 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import {
-  RECEIPT_GOLD,
-  generateGoldSet,
-  evaluate,
-  renderReport,
-  type EvalCase,
-  type GeneratedGoldDoc,
-} from '@decant/eval';
+import { RECEIPT_GOLD, generateGoldSet, evaluate, renderReport, type EvalCase, type GoldDoc } from '@decant/eval';
 import { requireApiKey, buildPipeline } from './wiring';
 import { renderGold } from './renderers';
+import { loadGoldDir } from './gold-dir';
+import { toPages } from './pdf';
 import { FsPageImageStore } from './fs-image-store';
 
 /**
- * Eval harness (plan §4): render a labeled gold set → run the real pipeline →
+ * Eval harness (plan §4): ingest a labeled gold set → run the real pipeline →
  * score → emit results.json for the calibration sidecar.
  *
  * Flags:
+ *   --gold-dir <dir>         score REAL (redacted) docs from a directory of
+ *                            <name>.<ext> + <name>.gold.json pairs (see gold-dir.ts)
  *   --static                 use the small hand-written RECEIPT_GOLD (3 docs)
  *   --seed N                 PRNG seed for the generated set (default 42)
  *   --receipts/--bank/--cac N  per-type counts (defaults 24/12/12)
- *   --type <docType>         only this type
- *   --limit N                cap the number of docs (cost control)
- *   --render-only [dir]      render images only (NO Gemini), then exit
+ *   --type <docType>         only this type · --limit N  cap the doc count
+ *   --render-only [dir]      render the SYNTHETIC images only (NO Gemini), then exit
  */
 const argv = process.argv.slice(2);
 const has = (f: string): boolean => argv.includes(f);
@@ -36,71 +32,95 @@ const strFlag = (f: string, def: string): string => {
   return i >= 0 && argv[i + 1] && !argv[i + 1]!.startsWith('--') ? argv[i + 1]! : def;
 };
 
-function buildGoldSet(): GeneratedGoldDoc[] {
-  let docs: GeneratedGoldDoc[] = has('--static')
-    ? RECEIPT_GOLD.map((g) => ({ ...g, difficulty: 'clean' as const }))
-    : generateGoldSet({
-        seed: numFlag('--seed', 42),
-        receipts: numFlag('--receipts', 24),
-        bankStatements: numFlag('--bank', 12),
-        cac: numFlag('--cac', 12),
-      });
+interface Prepared {
+  gold: GoldDoc;
+  images: string[];
+  texts: string[];
+  label: string;
+}
+
+function applyFilters(items: Prepared[]): Prepared[] {
   const type = strFlag('--type', '');
-  if (type) docs = docs.filter((g) => g.docType === type);
+  let out = type ? items.filter((i) => i.gold.docType === type) : items;
   const limit = numFlag('--limit', 0);
-  if (limit > 0) docs = docs.slice(0, limit);
-  return docs;
+  if (limit > 0) out = out.slice(0, limit);
+  return out;
+}
+
+/** Generated/static synthetic gold → rendered to images. */
+function generatedGold(): GoldDoc[] {
+  return has('--static')
+    ? RECEIPT_GOLD
+    : generateGoldSet({ seed: numFlag('--seed', 42), receipts: numFlag('--receipts', 24), bankStatements: numFlag('--bank', 12), cac: numFlag('--cac', 12) });
 }
 
 async function main(): Promise<void> {
-  const gold = buildGoldSet();
-  const composition = gold.reduce<Record<string, number>>((a, g) => ((a[g.docType] = (a[g.docType] ?? 0) + 1), a), {});
-  console.error(`Gold set: ${gold.length} docs — ${Object.entries(composition).map(([t, n]) => `${t}:${n}`).join(', ')}`);
+  const goldDir = strFlag('--gold-dir', '');
 
-  // Render-only: write images for inspection, no API calls.
-  if (has('--render-only')) {
+  // Render-only inspects the SYNTHETIC images; not applicable to a real gold dir.
+  if (!goldDir && has('--render-only')) {
     const out = resolve(process.cwd(), strFlag('--render-only', '../../reports/eval/samples'));
     mkdirSync(out, { recursive: true });
-    for (const g of gold) {
+    const gold = applyFilters(generatedGold().map((g) => ({ gold: g, images: [], texts: [], label: '' })));
+    for (const { gold: g } of gold) {
       const { buffer, ext } = await renderGold(g);
-      writeFileSync(join(out, `${g.id}.${g.difficulty}.${ext}`), buffer);
+      writeFileSync(join(out, `${g.id}.${ext}`), buffer);
     }
     console.log(`Rendered ${gold.length} images → ${out} (no extraction performed)`);
     return;
   }
 
-  const apiKey = requireApiKey();
-  const dir = mkdtempSync(join(tmpdir(), 'decant-eval-'));
-
-  // Render every doc first, then run one pipeline over all of them.
-  const pages = new Map<string, string[]>();
-  for (const g of gold) {
-    const { buffer, ext } = await renderGold(g);
-    const img = join(dir, `${g.id}.${ext}`);
-    writeFileSync(img, buffer);
-    pages.set(g.id, [img]);
+  // Build the prepared list: real docs ingested from disk, or synthetic rendered.
+  let prepared: Prepared[];
+  if (goldDir) {
+    const entries = await loadGoldDir(resolve(process.cwd(), goldDir));
+    prepared = [];
+    for (const { gold, source } of entries) {
+      const { images, texts } = await toPages([source]);
+      prepared.push({ gold, images, texts, label: 'real' });
+    }
+  } else {
+    const dir = mkdtempSync(join(tmpdir(), 'decant-eval-'));
+    prepared = [];
+    for (const g of generatedGold()) {
+      const { buffer, ext } = await renderGold(g);
+      const img = join(dir, `${g.id}.${ext}`);
+      writeFileSync(img, buffer);
+      prepared.push({ gold: g, images: [img], texts: [''], label: (g as { difficulty?: string }).difficulty ?? 'clean' });
+    }
   }
-  const pipeline = buildPipeline(apiKey, new FsPageImageStore(pages));
+  prepared = applyFilters(prepared);
+
+  const composition = prepared.reduce<Record<string, number>>((a, p) => ((a[p.gold.docType] = (a[p.gold.docType] ?? 0) + 1), a), {});
+  console.error(`Gold set${goldDir ? ` (real: ${goldDir})` : ''}: ${prepared.length} docs — ${Object.entries(composition).map(([t, n]) => `${t}:${n}`).join(', ')}`);
+
+  const apiKey = requireApiKey();
+  const store = new FsPageImageStore(
+    new Map(prepared.map((p) => [p.gold.id, p.images])),
+    new Map(prepared.map((p) => [p.gold.id, p.texts])),
+  );
+  const pipeline = buildPipeline(apiKey, store);
 
   const cases: EvalCase[] = [];
   let n = 0;
   let failed = 0;
-  for (const g of gold) {
-    console.error(`extracting ${g.id} (${g.difficulty}) … [${++n}/${gold.length}]`);
+  for (const p of prepared) {
+    console.error(`extracting ${p.gold.id} (${p.label}) … [${++n}/${prepared.length}]`);
     try {
-      const result = await pipeline.process(g.id, [{ pageIndex: 0, imageRef: pages.get(g.id)![0]! }]);
+      const pages = p.images.map((img, i) => ({ pageIndex: i, imageRef: img }));
+      const result = await pipeline.process(p.gold.id, pages);
       const predicted = result.documents[0];
-      if (predicted) cases.push({ gold: g, predicted });
+      if (predicted) cases.push({ gold: p.gold, predicted });
     } catch (e) {
       if ((e as { dailyQuotaExhausted?: boolean }).dailyQuotaExhausted) {
-        console.error(`  ! daily Gemini quota exhausted at ${g.id} — stopping early, scoring the ${cases.length} extracted so far.`);
+        console.error(`  ! daily Gemini quota exhausted at ${p.gold.id} — stopping early, scoring the ${cases.length} extracted so far.`);
         break;
       }
       failed++;
-      console.error(`  ! ${g.id} failed, skipping: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+      console.error(`  ! ${p.gold.id} failed, skipping: ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
     }
   }
-  if (failed) console.error(`\n${failed}/${gold.length} docs failed (skipped); scoring the ${cases.length} that succeeded.`);
+  if (failed) console.error(`\n${failed}/${prepared.length} docs failed (skipped); scoring the ${cases.length} that succeeded.`);
   if (cases.length === 0) {
     console.error('No documents were extracted — aborting before writing results.');
     process.exit(1);

@@ -1,0 +1,11 @@
+SHOPRITE LEKKI
+Date: 12/03/2026
+Cashier: REDACTED          Card: ****-****-****-1234
+--------------------------------------------
+Bread Loaf                         1,200.00
+Milk 1L                              800.00
+--------------------------------------------
+Subtotal                           2,000.00
+VAT (7.5%)                           150.00
+TOTAL                              2,150.00
+Currency: NGN     Paid: Card (REDACTED)

@@ -60,6 +60,7 @@ pnpm --filter @decant/cli run extract sample-receipt.png --save --ocr   # + bbox
 pnpm --filter @decant/cli run eval                       # full generated set (48 docs across 3 types)
 pnpm --filter @decant/cli run eval --render-only         # render the gold images only (no API calls)
 pnpm --filter @decant/cli run eval --type receipt --limit 8   # cost-controlled subset
+pnpm --filter @decant/cli run eval --gold-dir gold-samples    # REAL (redacted) labeled docs from a directory
 
 # 3. Human-in-the-loop review UI
 pnpm --filter @decant/web run seed
@@ -77,7 +78,7 @@ packages/calibrate/.venv/bin/pip install -e packages/calibrate
 packages/calibrate/.venv/bin/python -m calibrate.fit --in reports/eval/results.json --out reports/eval/
 ```
 
-The labeled gold set is **generated** (`@decant/eval` `generateGoldSet` — deterministic/seeded, PII-free) across all three registered types, with per-type renderers + image degradation (blur/rotate/low-quality JPEG) so the model's confidence actually varies. The Gemini client retries transient 429(per-minute)/5xx/network errors with backoff and **fails fast on a per-day quota**.
+The labeled gold set is **generated** (`@decant/eval` `generateGoldSet` — deterministic/seeded, PII-free) across all three registered types, with per-type renderers + image degradation (blur/rotate/low-quality JPEG) so the model's confidence actually varies. **Real redacted documents** can be scored too: drop `<name>.<ext>` + `<name>.gold.json` pairs into a directory and run `eval --gold-dir <dir>` (see `apps/cli/gold-samples/` for the format and redacted examples) — sources ingest through the same multi-format path. The Gemini client retries transient 429(per-minute)/5xx/network errors with backoff and **fails fast on a per-day quota**.
 
 On a synthetic overconfident set the sidecar halves ECE (**0.245 → 0.101**). A real run over 16 generated receipts scored 100% field accuracy / 0% silent-error at ECE 0.067 — but a statistically meaningful **per-type** reliability diagram needs the full multi-type set, which exceeds the **Gemini free tier's 20 `gemini-2.5-flash` requests/day**; run `pnpm --filter @decant/cli run eval` on a paid key (or accumulate across days) to produce it.
 
@@ -148,9 +149,9 @@ Enrichment is **best-effort** (an unreachable server never sinks an extraction);
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, and the **async-pipeline seam** (in-process default + BullMQ/Redis adapter).
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, the **async-pipeline seam** (in-process default + BullMQ/Redis adapter), and a **real-document gold loader** (`eval --gold-dir`) for scoring redacted real docs alongside the synthetic set.
 
-**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day) · real redacted gold documents (synthetic generator today) · an official CAC (RC-number → name) registry adapter when a credentialed API is available.
+**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day; the real-document gold loader is shipped — what's left is sourcing a larger labeled redacted corpus) · an official CAC (RC-number → name) registry adapter when a credentialed API is available.
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 

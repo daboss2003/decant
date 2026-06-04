@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import type { GeneratedGoldDoc, Difficulty } from '@decant/eval';
+import type { GoldDoc, Difficulty } from '@decant/eval';
 
 /**
  * Render a gold record (ground truth) into a printed-document image, per doc type,
@@ -13,10 +13,10 @@ const isoToDayFirst = (isoDate: string): string => {
   const [y, m, d] = isoDate.split('-');
   return `${d}/${m}/${y}`; // NG day-first, to exercise the date parser
 };
-const str = (g: GeneratedGoldDoc, k: string): string => String(g.fields[k]?.expected ?? '');
-const num = (g: GeneratedGoldDoc, k: string): number => Number(g.fields[k]?.expected ?? 0);
+const str = (g: GoldDoc, k: string): string => String(g.fields[k]?.expected ?? '');
+const num = (g: GoldDoc, k: string): number => Number(g.fields[k]?.expected ?? 0);
 
-function receiptSvg(g: GeneratedGoldDoc): string {
+function receiptSvg(g: GoldDoc): string {
   const cur = str(g, 'currency');
   const subtotal = num(g, 'subtotal');
   const tax = num(g, 'tax');
@@ -37,7 +37,7 @@ function receiptSvg(g: GeneratedGoldDoc): string {
   </svg>`;
 }
 
-function bankStatementSvg(g: GeneratedGoldDoc): string {
+function bankStatementSvg(g: GoldDoc): string {
   const cur = str(g, 'currency');
   const opening = num(g, 'openingBalance');
   const closing = num(g, 'closingBalance');
@@ -64,7 +64,7 @@ function bankStatementSvg(g: GeneratedGoldDoc): string {
   </svg>`;
 }
 
-function cacSvg(g: GeneratedGoldDoc): string {
+function cacSvg(g: GoldDoc): string {
   const cur = str(g, 'currency');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="420">
     <rect width="100%" height="100%" fill="#ffffff"/>
@@ -107,7 +107,7 @@ async function degrade(svg: string, difficulty: Difficulty): Promise<{ buffer: B
 }
 
 /** Render + degrade a gold record into an image buffer (dispatch by doc type). */
-export async function renderGold(g: GeneratedGoldDoc): Promise<{ buffer: Buffer; ext: 'png' | 'jpg' }> {
+export async function renderGold(g: GoldDoc & { difficulty?: Difficulty }): Promise<{ buffer: Buffer; ext: 'png' | 'jpg' }> {
   const svg = g.docType === 'bank_statement' ? bankStatementSvg(g) : g.docType === 'cac' ? cacSvg(g) : receiptSvg(g);
-  return degrade(svg, g.difficulty);
+  return degrade(svg, g.difficulty ?? 'clean');
 }

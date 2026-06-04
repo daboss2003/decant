@@ -1,0 +1,11 @@
+{
+  "docType": "receipt",
+  "fields": {
+    "merchantName": { "kind": "string", "expected": "SHOPRITE LEKKI" },
+    "transactionDate": { "kind": "date", "expected": "2026-03-12" },
+    "currency": { "kind": "currency", "expected": "NGN" },
+    "subtotal": { "kind": "money", "expected": 2000 },
+    "tax": { "kind": "money", "expected": 150 },
+    "total": { "kind": "money", "expected": 2150 }
+  }
+}

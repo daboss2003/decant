@@ -1,0 +1,12 @@
+{
+  "docType": "bank_statement",
+  "fields": {
+    "bankName": { "kind": "string", "expected": "Guaranty Trust Bank" },
+    "accountNumber": { "kind": "id", "expected": "********1234" },
+    "currency": { "kind": "currency", "expected": "NGN" },
+    "statementPeriodStart": { "kind": "date", "expected": "2026-04-01" },
+    "statementPeriodEnd": { "kind": "date", "expected": "2026-04-30" },
+    "openingBalance": { "kind": "money", "expected": 50000 },
+    "closingBalance": { "kind": "money", "expected": 73500 }
+  }
+}
