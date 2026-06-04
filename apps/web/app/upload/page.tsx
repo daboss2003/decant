@@ -3,6 +3,9 @@
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
 
+// Talks directly to the open (rate-limited, no-auth) REST API. If the API is run
+// with API_AUTH_TOKEN set, browser uploads would 401 — front it with a same-origin
+// server route that injects the bearer instead of exposing this page to the token.
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 interface JobState {
@@ -31,7 +34,9 @@ export default function UploadPage() {
       const { jobId } = (await res.json()) as { jobId: string };
       setStatus('processing…');
       for (let i = 0; i < 180; i++) {
-        const s = (await fetch(`${API}/uploads/${jobId}`).then((r) => r.json())) as JobState;
+        const poll = await fetch(`${API}/uploads/${jobId}`);
+        if (!poll.ok) throw new Error(`status check failed (HTTP ${poll.status})`);
+        const s = (await poll.json()) as JobState;
         if (s.status === 'done') {
           setStatus('done');
           setDocId(s.documentId ?? null);

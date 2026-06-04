@@ -1,7 +1,6 @@
-import { readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
 import {
   DocumentPipeline,
   RuleValidationService,
@@ -16,6 +15,7 @@ import {
 } from '@decant/core';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService, type PageImageStore } from '@decant/gemini';
 import { TesseractOcrProvider } from '@decant/ocr';
+import { persistPageImages } from '@decant/ingest';
 import {
   ExternalMcpClient,
   EnrichmentService,
@@ -152,19 +152,13 @@ export async function saveToReviewQueue(
   try {
     const uploadId = await savePipelineResult(prisma, { sourceType: 'photo', nPages, result });
 
-    // Copy EVERY raster page image into the web public dir so multi-page docs can be
-    // paged through in review; text-format pages (no raster) become null placeholders.
-    const uploadsDir = resolve(process.cwd(), '../../apps/web/public/uploads');
-    mkdirSync(uploadsDir, { recursive: true });
-    const refs = await Promise.all(
-      pageImagePaths.map(async (p, i) => {
-        if (!/\.(png|jpe?g|webp)$/i.test(p)) return null;
-        const ref = `/uploads/${uploadId}-${i}.png`;
-        await sharp(p).png().toFile(resolve(uploadsDir, `${uploadId}-${i}.png`));
-        return ref;
-      }),
-    );
-    const firstRef = refs.find((r) => r) ?? null;
+    // Copy every raster page image into the web public dir so multi-page docs can be
+    // paged through in review (text-format pages have no raster → null).
+    const { refs, firstRef } = await persistPageImages(pageImagePaths, {
+      dir: resolve(process.cwd(), '../../apps/web/public/uploads'),
+      urlPrefix: '/uploads',
+      id: uploadId,
+    });
     if (firstRef) {
       await prisma.upload.update({ where: { id: uploadId }, data: { imageRef: firstRef, pageImageRefs: refs } });
     }

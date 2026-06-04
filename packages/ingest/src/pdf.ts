@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import * as mupdf from 'mupdf';
 import { isTextFormat, loadDocumentText } from './doc-text';
 
@@ -62,13 +62,19 @@ export async function extractPdfText(pdfPath: string): Promise<string[]> {
  * classify + scanned fallback) AND have their text layer extracted; plain images
  * carry no text. The extraction service then reads exact text for born-digital
  * pages and only falls back to the vision model for scanned/image pages.
+ *
+ * `tempDirs` lists the rasterization dirs this call CREATED (one per PDF) so the
+ * caller can delete them once the pages are persisted; it does not include the
+ * caller's own upload dir.
  */
-export async function toPages(paths: string[]): Promise<{ images: string[]; texts: string[] }> {
+export async function toPages(paths: string[]): Promise<{ images: string[]; texts: string[]; tempDirs: string[] }> {
   const images: string[] = [];
   const texts: string[] = [];
+  const tempDirs: string[] = [];
   for (const p of paths) {
     if (isPdf(p)) {
       const [imgs, txts] = await Promise.all([rasterizePdf(p), extractPdfText(p)]);
+      if (imgs.length) tempDirs.push(dirname(imgs[0])); // the decant-pdf- dir rasterizePdf created
       imgs.forEach((img, i) => {
         images.push(img);
         texts.push(txts[i] ?? '');
@@ -83,5 +89,5 @@ export async function toPages(paths: string[]): Promise<{ images: string[]; text
       texts.push(''); // a raster image has no text layer → vision/OCR path
     }
   }
-  return { images, texts };
+  return { images, texts, tempDirs };
 }

@@ -9,11 +9,11 @@
   },
   "dependencies": {
     "@decant/gemini": "workspace:*",
-    "mupdf": "^1.27.0"
+    "mupdf": "^1.27.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "pdf-lib": "^1.17.1",
-    "sharp": "^0.34.5"
+    "pdf-lib": "^1.17.1"
   }
 }

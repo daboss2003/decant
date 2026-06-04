@@ -3,7 +3,7 @@ import { execSync, spawn, type ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { rmSync } from 'node:fs';
+import { rmSync, mkdtempSync, existsSync } from 'node:fs';
 import { createPrismaClient, savePipelineResult, type PrismaClient } from '@decant/db';
 import type { PipelineResult } from '@decant/core';
 
@@ -12,6 +12,9 @@ const apiDir = resolve(here, '..');
 const tsx = resolve(apiDir, 'node_modules/.bin/tsx');
 const dbFile = join(tmpdir(), `decant-api-${process.pid}.db`);
 const url = `file:${dbFile}`;
+const uploadsOut = mkdtempSync(join(tmpdir(), 'decant-api-uploads-'));
+// 1x1 PNG (so persistPageImages has a real raster to copy)
+const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 
 let prisma: PrismaClient;
 let server: ChildProcess;
@@ -46,7 +49,7 @@ beforeAll(async () => {
   // fixed-port collisions with any leftover/other server).
   // DECANT_PIPELINE_MODE=echo → uploads run offline (no Gemini): the ingested text
   // is persisted as a generic doc, so the upload flow is e2e-testable here.
-  server = spawn(tsx, ['src/main.ts'], { cwd: apiDir, env: { ...process.env, DATABASE_URL: url, PORT: '0', DECANT_PIPELINE_MODE: 'echo' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  server = spawn(tsx, ['src/main.ts'], { cwd: apiDir, env: { ...process.env, DATABASE_URL: url, PORT: '0', DECANT_PIPELINE_MODE: 'echo', UPLOADS_DIR: uploadsOut }, stdio: ['ignore', 'pipe', 'pipe'] });
   const port = await new Promise<number>((res, rej) => {
     const t = setTimeout(() => rej(new Error('API did not start in time')), 40_000);
     let buf = '';
@@ -68,6 +71,7 @@ afterAll(async () => {
   server?.kill('SIGKILL');
   await prisma?.$disconnect();
   rmSync(dbFile, { force: true });
+  rmSync(uploadsOut, { recursive: true, force: true });
 });
 
 describe('Decant REST API (NestJS adapter over the same core/db)', () => {
@@ -138,5 +142,18 @@ describe('Decant REST API (NestJS adapter over the same core/db)', () => {
 
   it('GET /uploads/:jobId is 404 for an unknown job', async () => {
     expect((await fetch(`${base}/uploads/nope`)).status).toBe(404);
+  });
+
+  it('an uploaded image is persisted as a served page so it shows in review', async () => {
+    const form = new FormData();
+    form.append('files', new Blob([PNG_1x1], { type: 'image/png' }), 'scan.png');
+    const { jobId } = (await fetch(`${base}/uploads`, { method: 'POST', body: form }).then((r) => r.json())) as { jobId: string };
+    const state = (await fetch(`${base}/uploads/${jobId}`).then((r) => r.json())) as { status: string; uploadId?: string };
+    expect(state.status).toBe('done');
+
+    const upload = await prisma.upload.findUniqueOrThrow({ where: { id: state.uploadId! } });
+    expect(upload.imageRef).toBe(`/uploads/${jobId}-0.png`);
+    expect(upload.pageImageRefs).toEqual([`/uploads/${jobId}-0.png`]);
+    expect(existsSync(join(uploadsOut, `${jobId}-0.png`))).toBe(true); // actually copied to the served dir
   });
 });

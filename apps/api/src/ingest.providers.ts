@@ -10,10 +10,18 @@ import {
   type PipelineResult,
 } from '@decant/core';
 import { createQueue } from '@decant/queue';
+import { resolve } from 'node:path';
+import { rmSync } from 'node:fs';
+import { Logger } from '@nestjs/common';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService } from '@decant/gemini';
-import { FsPageImageStore } from '@decant/ingest';
+import { FsPageImageStore, persistPageImages } from '@decant/ingest';
 import { savePipelineResult, type PrismaClient } from '@decant/db';
 import { PRISMA } from './db.providers';
+
+const logger = new Logger('IngestJob');
+
+/** Web-served uploads dir (configurable for split deploys; defaults to the web app's public dir). */
+const uploadsDir = (): string => process.env.UPLOADS_DIR ?? resolve(process.cwd(), '../../apps/web/public/uploads');
 
 export const JOB_TRACKER = Symbol('JOB_TRACKER');
 export const INGEST_QUEUE = Symbol('INGEST_QUEUE');
@@ -23,7 +31,13 @@ export type JobState =
   | { status: 'done'; uploadId: string; documentId: string | null }
   | { status: 'error'; error: string };
 
-/** In-memory job status (single-process; a multi-instance deploy would use Redis/DB). */
+/**
+ * In-memory job status, keyed by jobId. Process-local: with BullMQ the producer
+ * and worker run in the SAME process here (single-instance), so the status the
+ * worker writes is the status the API reads. A true multi-instance/horizontal
+ * deploy would need a shared status store (Redis hash / a Postgres status row) —
+ * out of scope for this single-host design (see IngestJob.tempDirs).
+ */
 export type JobTracker = Map<string, JobState>;
 
 /** Run the real Gemini pipeline over the job's pages (classify → extract → validate → confidence → route). */
@@ -64,18 +78,43 @@ function echoResult(job: IngestJob): PipelineResult {
   };
 }
 
-/** The job handler: ingest → (pipeline | echo) → persist → record status. Never throws out (best-effort). */
+/** Remove the job's temp upload/raster dirs (best-effort). Only after the pages are persisted. */
+function cleanupTempDirs(job: IngestJob): void {
+  for (const d of new Set(job.tempDirs ?? [])) {
+    try {
+      rmSync(d, { recursive: true, force: true });
+    } catch {
+      /* best-effort: a cleanup failure must never affect job status */
+    }
+  }
+}
+
+/** The job handler: ingest → (pipeline | echo) → persist → record status. Throws on failure (drives BullMQ retries). */
 function makeHandler(prisma: PrismaClient, tracker: JobTracker) {
   const echo = process.env.DECANT_PIPELINE_MODE === 'echo';
   return async (job: IngestJob): Promise<void> => {
     tracker.set(job.jobId, { status: 'processing' });
     try {
       const result = echo ? echoResult(job) : await runPipeline(job);
-      const uploadId = await savePipelineResult(prisma, { sourceType: job.sourceType, nPages: job.pageImages.length, result });
+      // Copy page images into the web-served dir so the uploaded doc shows its scan in review.
+      const { refs, firstRef } = await persistPageImages(job.pageImages, { dir: uploadsDir(), urlPrefix: '/uploads', id: job.jobId });
+      const uploadId = await savePipelineResult(prisma, {
+        sourceType: job.sourceType,
+        nPages: job.pageImages.length,
+        result,
+        imageRef: firstRef ?? undefined,
+        pageImageRefs: refs,
+      });
       const firstDoc = await prisma.document.findFirst({ where: { uploadId }, orderBy: { pageStart: 'asc' } });
       tracker.set(job.jobId, { status: 'done', uploadId, documentId: firstDoc?.id ?? null });
+      cleanupTempDirs(job); // success → the temp files are no longer needed
     } catch (e) {
-      tracker.set(job.jobId, { status: 'error', error: e instanceof Error ? e.message : String(e) });
+      // Log the real cause server-side; the open status endpoint exposes only a generic message.
+      logger.error(`Job ${job.jobId} failed: ${e instanceof Error ? (e.stack ?? e.message) : String(e)}`);
+      tracker.set(job.jobId, { status: 'error', error: 'processing failed' });
+      // Re-throw so BullMQ counts the attempt + retries (temp files are KEPT for the retry,
+      // hence cleanup-on-success only); InProcessQueue.add swallows it (status already recorded).
+      throw e;
     }
   };
 }

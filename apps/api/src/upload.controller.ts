@@ -30,7 +30,9 @@ export class UploadController {
   ) {}
 
   @Post()
-  @UseInterceptors(FilesInterceptor('files', 20))
+  // Cap file size + count so a single request can't buffer unbounded bytes in
+  // memory (multer's default memory storage); oversize → multer 413 via Nest.
+  @UseInterceptors(FilesInterceptor('files', 20, { limits: { fileSize: 20 * 1024 * 1024, files: 20 } }))
   async upload(@UploadedFiles() files: UploadFile[]): Promise<{ jobId: string; status: string }> {
     if (!files?.length) throw new BadRequestException('expected one or more files in the "files" field');
     const dir = mkdtempSync(join(tmpdir(), 'decant-upload-'));
@@ -40,10 +42,11 @@ export class UploadController {
       return p;
     });
 
-    const { images, texts } = await toPages(paths);
+    const { images, texts, tempDirs } = await toPages(paths);
     const jobId = randomUUID();
     this.tracker.set(jobId, { status: 'queued' });
-    await this.queue.add({ jobId, sourceType: 'upload', pageImages: images, pageTexts: texts });
+    // The upload dir + any PDF-rasterization dirs are temp; the handler deletes them when done.
+    await this.queue.add({ jobId, sourceType: 'upload', pageImages: images, pageTexts: texts, tempDirs: [dir, ...tempDirs] });
 
     return { jobId, status: this.tracker.get(jobId)?.status ?? 'queued' };
   }

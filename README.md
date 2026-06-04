@@ -73,6 +73,17 @@ pnpm --filter @decant/cli run eval --gold-dir gold-samples    # REAL (redacted) 
 pnpm --filter @decant/web run seed
 pnpm --filter @decant/web run dev    # http://localhost:3000
 #   WEB_PASSWORD=… → require login · NEXT_PUBLIC_API_URL=… → point /upload at the API (default :3001)
+#   API: open + rate-limited (RATE_LIMIT_RPM, default 120/IP/min; keyed on the socket peer —
+#        set TRUST_PROXY=1 only behind a real proxy to honor X-Forwarded-For); uploads capped
+#        at 20 MB/file × 20 files; page images are served from UPLOADS_DIR (default the web
+#        app's public/uploads) so scans show in review.
+```
+
+**Postgres (managed cloud).** SQLite is the dev/test default; for a cloud Postgres set `DATABASE_URL` and switch the Prisma datasource provider (it must be a literal, so it's scripted):
+
+```bash
+pnpm --filter @decant/db run use-postgres   # flips provider sqlite→postgresql (use-sqlite reverts)
+pnpm --filter @decant/db run db:generate && pnpm --filter @decant/db exec prisma db push
 ```
 
 ## Calibration

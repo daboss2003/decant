@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
+import { sessionToken } from '../../lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +9,8 @@ async function login(formData: FormData): Promise<void> {
   const password = process.env.WEB_PASSWORD;
   const entered = String(formData.get('password') ?? '');
   if (password && entered === password) {
-    (await cookies()).set('decant_session', password, { httpOnly: true, sameSite: 'lax', path: '/', secure: process.env.NODE_ENV === 'production' });
+    // Store a derived token, not the raw password (see lib/session.ts).
+    (await cookies()).set('decant_session', await sessionToken(password), { httpOnly: true, sameSite: 'lax', path: '/', secure: process.env.NODE_ENV === 'production' });
     redirect('/');
   }
   redirect('/login?error=1');

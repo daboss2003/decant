@@ -4,3 +4,4 @@
 export * from './pdf';
 export * from './doc-text';
 export * from './fs-image-store';
+export * from './persist-images';

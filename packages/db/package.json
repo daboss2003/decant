@@ -9,7 +9,9 @@
   },
   "scripts": {
     "db:generate": "prisma generate",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "use-sqlite": "node scripts/set-provider.mjs sqlite",
+    "use-postgres": "node scripts/set-provider.mjs postgresql"
   },
   "dependencies": {
     "@decant/core": "workspace:*",
