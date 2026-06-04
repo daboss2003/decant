@@ -15,7 +15,10 @@ export default async function QueuePage() {
 
   return (
     <main>
-      <h1>Review queue</h1>
+      <div className="topbar">
+        <h1>Review queue</h1>
+        <Link href="/upload" className="pill ok">+ Upload</Link>
+      </div>
       <p className="muted">Documents with at least one field the system flagged as low-confidence.</p>
 
       {docs.length === 0 && (

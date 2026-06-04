@@ -44,7 +44,9 @@ beforeAll(async () => {
 
   // PORT=0 → ephemeral; read the bound port from the server's stdout (avoids
   // fixed-port collisions with any leftover/other server).
-  server = spawn(tsx, ['src/main.ts'], { cwd: apiDir, env: { ...process.env, DATABASE_URL: url, PORT: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+  // DECANT_PIPELINE_MODE=echo → uploads run offline (no Gemini): the ingested text
+  // is persisted as a generic doc, so the upload flow is e2e-testable here.
+  server = spawn(tsx, ['src/main.ts'], { cwd: apiDir, env: { ...process.env, DATABASE_URL: url, PORT: '0', DECANT_PIPELINE_MODE: 'echo' }, stdio: ['ignore', 'pipe', 'pipe'] });
   const port = await new Promise<number>((res, rej) => {
     const t = setTimeout(() => rej(new Error('API did not start in time')), 40_000);
     let buf = '';
@@ -113,5 +115,28 @@ describe('Decant REST API (NestJS adapter over the same core/db)', () => {
       body: JSON.stringify({ action: 'nope' }),
     });
     expect(r.status).toBe(400);
+  });
+
+  it('POST /uploads ingests a document, enqueues a job, and persists the result (echo mode)', async () => {
+    const form = new FormData();
+    form.append('files', new Blob(['# Receipt\nTOTAL 500 NGN'], { type: 'text/markdown' }), 'r.md');
+    const r = await fetch(`${base}/uploads`, { method: 'POST', body: form });
+    expect(r.status).toBe(201);
+    const { jobId } = (await r.json()) as { jobId: string };
+    expect(jobId).toBeTruthy();
+
+    // in-process queue runs the handler inline, so the job is already done
+    const state = (await fetch(`${base}/uploads/${jobId}`).then((x) => x.json())) as { status: string; documentId?: string };
+    expect(state.status).toBe('done');
+    expect(state.documentId).toBeTruthy();
+
+    // the ingested born-digital TEXT reached the handler and was persisted
+    const doc = (await fetch(`${base}/documents/${state.documentId}`).then((x) => x.json())) as { fields: Array<{ fieldPath: string; value: unknown }> };
+    const raw = doc.fields.find((f) => f.fieldPath === 'rawText');
+    expect(String(raw?.value)).toContain('TOTAL 500');
+  });
+
+  it('GET /uploads/:jobId is 404 for an unknown job', async () => {
+    expect((await fetch(`${base}/uploads/nope`)).status).toBe(404);
   });
 });

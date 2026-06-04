@@ -69,9 +69,10 @@ pnpm --filter @decant/cli run eval --render-only         # render the gold image
 pnpm --filter @decant/cli run eval --type receipt --limit 8   # cost-controlled subset
 pnpm --filter @decant/cli run eval --gold-dir gold-samples    # REAL (redacted) labeled docs from a directory
 
-# 3. Human-in-the-loop review UI
+# 3. Human-in-the-loop review UI (+ upload form at /upload → posts to the REST API)
 pnpm --filter @decant/web run seed
 pnpm --filter @decant/web run dev    # http://localhost:3000
+#   WEB_PASSWORD=… → require login · NEXT_PUBLIC_API_URL=… → point /upload at the API (default :3001)
 ```
 
 ## Calibration
@@ -156,9 +157,9 @@ Enrichment is **best-effort** (an unreachable server never sinks an extraction);
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, the **async-pipeline seam** (in-process default + BullMQ/Redis adapter), a **real-document gold loader** (`eval --gold-dir`), and a **NestJS REST API** (results / review-queue / corrections, optional bearer auth, e2e-tested).
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, the **async-pipeline seam** (in-process default + BullMQ/Redis adapter), a **real-document gold loader** (`eval --gold-dir`), a **NestJS REST API** (results / review-queue / corrections **+ async `POST /uploads`** ingest→enqueue, optional bearer auth, e2e-tested), and a **web upload UI + optional login**.
 
-**Roadmap:** REST API `POST /uploads` (multipart → ingest → enqueue; needs the ingestion shared into a package) · web upload UI + auth + multi-page review · CI (typecheck/test) + Dockerfile/compose (Redis + Postgres) · the full per-type reliability diagram (Gemini key beyond the free-tier 20 flash/day + a larger redacted corpus) · an official CAC registry adapter when a credentialed API exists.
+**Roadmap:** multi-page review (page navigation; needs persisting all page images, not just the first) · the full per-type reliability diagram (Gemini key beyond the free-tier 20 flash/day + a larger redacted corpus) · an official CAC registry adapter when a credentialed API exists. (Redis/Postgres are consumed as managed cloud services via `REDIS_URL`/`DATABASE_URL` — note Postgres also needs the Prisma datasource `provider` switched to `postgresql`.)
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 
