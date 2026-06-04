@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { requireApiKey, buildPipeline, buildEnrichment, saveToReviewQueue, loadCalibration } from './wiring';
 import { FsPageImageStore } from './fs-image-store';
+import { toPageImages } from './pdf';
 
 async function main(): Promise<void> {
   const apiKey = requireApiKey();
@@ -17,8 +18,10 @@ async function main(): Promise<void> {
   }
 
   const uploadId = 'cli-upload';
-  const pages = files.map((f, i) => ({ pageIndex: i, imageRef: f }));
-  const store = new FsPageImageStore(new Map([[uploadId, files]]));
+  // Rasterize any PDFs to per-page PNGs (mupdf); images pass through.
+  const pageImages = await toPageImages(files);
+  const pages = pageImages.map((f, i) => ({ pageIndex: i, imageRef: f }));
+  const store = new FsPageImageStore(new Map([[uploadId, pageImages]]));
   const calibration = loadCalibration();
   const pipeline = buildPipeline(apiKey, store, calibration, { ocr });
 
@@ -69,8 +72,9 @@ async function main(): Promise<void> {
     console.log('');
   }
 
-  if (save && files[0]) {
-    const { documentId } = await saveToReviewQueue(result, files[0], files.length);
+  if (save && pageImages[0]) {
+    // Persist the rasterized first page (PDFs) / the image so the review UI shows it.
+    const { documentId } = await saveToReviewQueue(result, pageImages[0], pageImages.length);
     console.log(
       documentId
         ? `Saved to review queue → http://localhost:3000/documents/${documentId}`

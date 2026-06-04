@@ -94,6 +94,11 @@ export class HeuristicConfidenceService implements ConfidenceService {
       else if (eff.gatePassed) c = Math.max(c, w.gatePassBoost);
       if (eff.signalFailed) c *= w.signalFailFactor;
 
+      // Self-consistency: when N samples disagreed on this field, scale confidence
+      // down by the agreement (a model-internal distrust signal, plan §3).
+      const agreement = doc.agreement?.[f.fieldPath];
+      if (agreement !== undefined) c *= agreement;
+
       c *= classifyConfidence;
       if (doc.mode === 'generic') c = Math.min(c, w.genericMaxConfidence);
 
@@ -111,6 +116,7 @@ export class HeuristicConfidenceService implements ConfidenceService {
           gatePassed: eff.gatePassed,
           signalFailed: eff.signalFailed,
           generic: doc.mode === 'generic',
+          ...(agreement !== undefined ? { selfConsistency: agreement } : {}),
           rawConfidence: raw,
           calibrated: Boolean(cal),
         },

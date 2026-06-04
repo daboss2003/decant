@@ -38,6 +38,12 @@ export interface ExtractedDocument {
   mode: 'typed' | 'generic';
   /** Raw model output: a typed extraction object OR a GenericExtraction. */
   raw: unknown;
+  /**
+   * Per-fieldPath self-consistency agreement in [0,1] (fraction of N samples that
+   * agreed on the chosen value), when extracted with N-sample self-consistency.
+   * The ConfidenceService folds it in as a model-internal confidence signal.
+   */
+  agreement?: Record<string, number>;
 }
 
 export interface ExtractionService {

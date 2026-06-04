@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p packages/schemas/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/gemini/tsconfig.json --noEmit && tsc -p packages/ocr/tsconfig.json --noEmit && tsc -p packages/enrich/tsconfig.json --noEmit && tsc -p packages/db/tsconfig.json --noEmit && tsc -p packages/eval/tsconfig.json --noEmit && tsc -p apps/cli/tsconfig.json --noEmit && tsc -p apps/mcp/tsconfig.json --noEmit",
+    "typecheck": "tsc -p packages/schemas/tsconfig.json --noEmit && tsc -p packages/core/tsconfig.json --noEmit && tsc -p packages/gemini/tsconfig.json --noEmit && tsc -p packages/ocr/tsconfig.json --noEmit && tsc -p packages/enrich/tsconfig.json --noEmit && tsc -p packages/queue/tsconfig.json --noEmit && tsc -p packages/db/tsconfig.json --noEmit && tsc -p packages/eval/tsconfig.json --noEmit && tsc -p apps/cli/tsconfig.json --noEmit && tsc -p apps/mcp/tsconfig.json --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {
