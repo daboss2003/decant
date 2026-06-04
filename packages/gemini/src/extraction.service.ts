@@ -38,6 +38,9 @@ function rangeInclusive([a, b]: [number, number]): number[] {
   return out;
 }
 
+/** A page with at least this much extracted text is treated as born-digital. */
+const MIN_PAGE_TEXT_CHARS = 12;
+
 export class GeminiExtractionService implements ExtractionService {
   private readonly model: string;
   private readonly genericSchema: unknown;
@@ -53,14 +56,25 @@ export class GeminiExtractionService implements ExtractionService {
   }
 
   async extract(segment: DocumentSegment, uploadId: string): Promise<ExtractedDocument> {
-    const images = await this.images.loadByUpload(uploadId, rangeInclusive(segment.pageRange));
+    const pageIndices = rangeInclusive(segment.pageRange);
     const documentId = `${uploadId}:${segment.pageRange[0]}-${segment.pageRange[1]}`;
     const entry = segment.isGeneric ? undefined : this.registry.get(segment.docType);
+
+    // Prefer the born-digital TEXT layer (exact, cheap, no vision) when present;
+    // fall back to sending the page image to the vision model (scanned/image docs).
+    const texts = (this.images.loadText ? await this.images.loadText(uploadId, pageIndices) : []).map((t) => t.trim());
+    // Only take the text path when EVERY page in the segment is born-digital — a
+    // mixed PDF (some scanned pages) falls back to vision so no page is dropped.
+    const useText = texts.length === pageIndices.length && texts.every((t) => t.length >= MIN_PAGE_TEXT_CHARS);
+    const docText = texts.join('\n\n--- page break ---\n\n');
+    const images = useText ? [] : await this.images.loadByUpload(uploadId, pageIndices);
+    const withText = (prompt: string): string =>
+      useText ? `${prompt}\n\nThe document's exact text layer follows (no OCR needed); extract from it:\n"""\n${docText}\n"""` : prompt;
 
     if (!entry) {
       const text = await this.client.generateJson({
         model: this.model,
-        userText: GENERIC_EXTRACT_PROMPT,
+        userText: withText(GENERIC_EXTRACT_PROMPT),
         images,
         responseJsonSchema: this.genericSchema,
         temperature: this.config.temperature,
@@ -77,7 +91,7 @@ export class GeminiExtractionService implements ExtractionService {
 
     const text = await this.client.generateJson({
       model: this.model,
-      userText: typedExtractPrompt(segment.docType),
+      userText: withText(typedExtractPrompt(segment.docType)),
       images,
       responseJsonSchema: entry.toGeminiJsonSchema(),
       temperature: this.config.temperature,

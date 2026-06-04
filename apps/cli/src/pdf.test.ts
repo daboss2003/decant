@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import sharp from 'sharp';
-import { rasterizePdf, isPdf, toPageImages } from './pdf';
+import { rasterizePdf, isPdf, toPageImages, extractPdfText, toPages } from './pdf';
 
 async function makePdf(pages: string[]): Promise<string> {
   const pdf = await PDFDocument.create();
@@ -37,5 +37,33 @@ describe('rasterizePdf (mupdf)', () => {
     expect(expanded).toHaveLength(3); // 2 PDF pages + 1 image
     expect(isPdf(expanded[0]!)).toBe(false); // rasterized to .png
     expect(expanded[2]).toBe('/some/image.png');
+  }, 30_000);
+});
+
+describe('extractPdfText (born-digital text layer, no AI)', () => {
+  it('extracts the exact per-page text from a born-digital PDF', async () => {
+    const pdf = await makePdf(['CAFE NEABLE TOTAL 500', 'Page two body']);
+    const texts = await extractPdfText(pdf);
+    expect(texts).toHaveLength(2);
+    expect(texts[0]).toContain('CAFE NEABLE');
+    expect(texts[0]).toContain('500');
+    expect(texts[1]).toContain('Page two');
+  }, 30_000);
+
+  it('toPages aligns images + text; plain images get empty text', async () => {
+    const pdf = await makePdf(['Born digital page']);
+    const { images, texts } = await toPages([pdf, '/some/scan.png']);
+    expect(images).toHaveLength(2);
+    expect(texts[0]).toContain('Born digital'); // PDF page → has text
+    expect(texts[1]).toBe(''); // image → no text layer
+  }, 30_000);
+
+  it('toPages handles a text format (md): exact text + a rendered preview image', async () => {
+    const md = join(mkdtempSync(join(tmpdir(), 'decant-md-')), 'r.md');
+    writeFileSync(md, '# Receipt\nTOTAL 500');
+    const { images, texts } = await toPages([md]);
+    expect(images).toHaveLength(1);
+    expect(images[0]).toMatch(/\.png$/); // rendered preview for classify
+    expect(texts[0]).toContain('TOTAL 500'); // exact text for extraction
   }, 30_000);
 });

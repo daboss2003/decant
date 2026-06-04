@@ -7,12 +7,15 @@ Anyone can prompt a vision model to read a receipt. The differentiator here is *
 ## How it works
 
 ```
-upload → Classify (Gemini Flash-Lite, batched) → segment into documents
-       → Extract (Gemini, typed per registered type | generic fallback)
+upload (image | PDF → rasterized + text layer) → Classify (Gemini Flash-Lite, batched) → segment
+       → Extract  (born-digital text → model directly, no vision; else image → vision;
+                   optional N-sample self-consistency fan-out)
        → Validate (schema + domain/reconciliation rules)
-       → Confidence (fuse signals) → Route (auto-approve | needs review)
+       → Confidence (fuse signals incl. self-consistency) → Route (auto-approve | needs review)
        → persist + Audit trail → human review (web UI / MCP elicitation)
 ```
+
+**Multi-format ingestion.** Born-digital documents — **PDF** (text layer via mupdf), **Markdown, HTML, XML, SVG, TXT, CSV, JSON, YAML** — have their exact text read **directly (no OCR, no vision model)** and fed to the extractor (cheaper + character-exact; markup is stripped to text). The vision model is the fallback, used only for scanned PDFs and raster images. (Deliberately *not* LangChain — the format loaders are ~80 lines with minimal deps; LangChain's loaders are thin wrappers around the same libs and would add a large, fast-moving dependency that overlaps the existing Zod-typed pipeline.) Extraction can also run **N samples and measure self-consistency** (`--samples N`) — agreement across samples is a model-internal confidence signal that routes shaky fields to review. The pipeline runs in-process by default or as durable **BullMQ/Redis** jobs (`REDIS_URL`).
 
 A document classifies to a **registered type** (receipt/invoice, bank statement, …) → full typed schema + domain rules + per-type confidence; anything else falls back to a **generic, low-trust** extractor that always routes to review. The strongest confidence signal is **reconciliation** — receipt totals must add up; a bank statement's running balance must walk row by row — which localizes errors to the exact field/row.
 
@@ -25,9 +28,10 @@ A document classifies to a **registered type** (receipt/invoice, bank statement,
 | `packages/gemini` | `@google/genai`-backed Classify + Extract services (the SDK behind a mockable interface) |
 | `packages/ocr` | tesseract.js `OcrProvider` → per-field bbox provenance (fuzzy-aligned to each value, independent of the model's claim) |
 | `packages/enrich` | the **MCP client role** + a **pluggable verification adapter** (`makeVerifier` — add a source by implementing one `lookup`); FX enrichment + company-registry verification, with bundled demo and real (open.er-api/GLEIF) servers |
+| `packages/queue` | the async-pipeline seam: a `JobQueue` with an in-process default (dev) + a Redis/BullMQ adapter (retries/backoff/concurrency), picked by `REDIS_URL` |
 | `packages/db` | Prisma + SQLite persistence + the audit-trail-writing `ReviewService` |
 | `packages/eval` | Gold scoring + success metrics (field accuracy, reliability/ECE/Brier, safe-failure rate, threshold sweep) |
-| `apps/cli` | Run extraction / eval against real Gemini |
+| `apps/cli` | Run extraction / eval against real Gemini; PDF rasterization (mupdf) + born-digital text-layer extraction |
 | `apps/web` | Next.js human-in-the-loop review UI |
 
 **Design principle (plan §8): one domain core, many thin adapters.** The CLI, the web app, and (next) the MCP server are all thin adapters over `packages/core` + `packages/db` — so a correction made via the web UI or MCP elicitation writes the *identical* audit event.
@@ -144,9 +148,9 @@ Enrichment is **best-effort** (an unreachable server never sinks an extraction);
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), and the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry) feeding the trust loop.
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, and the **async-pipeline seam** (in-process default + BullMQ/Redis adapter).
 
-**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day) · an official CAC (RC-number → name) registry adapter when a credentialed API is available (GLEIF stands in as a real, name-based registry today).
+**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day) · real redacted gold documents (synthetic generator today) · an official CAC (RC-number → name) registry adapter when a credentialed API is available.
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 

@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { requireApiKey, buildPipeline, buildEnrichment, saveToReviewQueue, loadCalibration } from './wiring';
 import { FsPageImageStore } from './fs-image-store';
-import { toPageImages } from './pdf';
+import { toPages } from './pdf';
 
 async function main(): Promise<void> {
   const apiKey = requireApiKey();
@@ -11,19 +11,23 @@ async function main(): Promise<void> {
   const ocr = argv.includes('--ocr');
   const enrichLive = argv.includes('--enrich-live');
   const enrich = enrichLive || argv.includes('--enrich');
-  const files = argv.filter((a) => !a.startsWith('--')).map((f) => resolve(f));
+  const samplesIdx = argv.indexOf('--samples');
+  const samples = samplesIdx >= 0 ? Number(argv[samplesIdx + 1]) || 1 : 1;
+  const files = argv.filter((a, i) => !a.startsWith('--') && argv[i - 1] !== '--samples').map((f) => resolve(f));
   if (files.length === 0) {
-    console.error('usage: tsx src/run.ts <image-or-pdf> [more pages…] [--save] [--ocr] [--enrich|--enrich-live]');
+    console.error('usage: tsx src/run.ts <image|pdf|md|html|xml|svg|txt|csv …> [more …] [--save] [--ocr] [--enrich|--enrich-live] [--samples N]');
     process.exit(1);
   }
 
   const uploadId = 'cli-upload';
-  // Rasterize any PDFs to per-page PNGs (mupdf); images pass through.
-  const pageImages = await toPageImages(files);
+  // PDFs → per-page PNGs (for classify + scanned fallback) + born-digital text layer
+  // (mupdf, no AI); images pass through with no text. Extraction reads exact text
+  // for born-digital pages and only uses the vision model for scanned/image pages.
+  const { images: pageImages, texts: pageTexts } = await toPages(files);
   const pages = pageImages.map((f, i) => ({ pageIndex: i, imageRef: f }));
-  const store = new FsPageImageStore(new Map([[uploadId, pageImages]]));
+  const store = new FsPageImageStore(new Map([[uploadId, pageImages]]), new Map([[uploadId, pageTexts]]));
   const calibration = loadCalibration();
-  const pipeline = buildPipeline(apiKey, store, calibration, { ocr });
+  const pipeline = buildPipeline(apiKey, store, calibration, { ocr, samples });
 
   const calLabel = !calibration
     ? 'uncalibrated'
@@ -31,7 +35,7 @@ async function main(): Promise<void> {
       ? `calibrated: ${calibration.method}`
       : 'calibrated: per-type';
   console.error(
-    `Processing ${files.length} page(s) through the pipeline (${calLabel}${ocr ? ', OCR provenance' : ''}${enrich ? `, MCP enrichment (${enrichLive ? 'live' : 'demo'})` : ''})…\n`,
+    `Processing ${files.length} page(s) through the pipeline (${calLabel}${ocr ? ', OCR provenance' : ''}${samples > 1 ? `, ${samples}× self-consistency` : ''}${enrich ? `, MCP enrichment (${enrichLive ? 'live' : 'demo'})` : ''})…\n`,
   );
   let result = await pipeline.process(uploadId, pages);
 

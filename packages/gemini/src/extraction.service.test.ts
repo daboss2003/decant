@@ -63,4 +63,23 @@ describe('GeminiExtractionService', () => {
     expect(doc.mode).toBe('typed');
     expect(doc.raw).toEqual({}); // parseJsonSafe -> null -> {}
   });
+
+  it('reads the born-digital TEXT layer when present (no image sent to the model)', async () => {
+    const bornDigital = 'CAFE NEABLE  Date: 2026-05-01  Subtotal 500  VAT 0  TOTAL 500  Currency NGN';
+    const textStore = new InMemoryPageImageStore(new Map(), new Map([['u1', [img]]]), new Map([['u1', [bornDigital]]]));
+    const client = new FakeClient(receiptJson);
+    const svc = new GeminiExtractionService(client, textStore, registry);
+    const doc = await svc.extract(typedSeg, 'u1');
+    expect(doc.mode).toBe('typed');
+    expect(client.requests[0]?.images).toHaveLength(0); // text path → no vision
+    expect(client.requests[0]?.userText).toContain('CAFE NEABLE'); // exact text fed to the model
+  });
+
+  it('falls back to the image when there is no (or too little) text layer', async () => {
+    const scanned = new InMemoryPageImageStore(new Map(), new Map([['u1', [img]]]), new Map([['u1', ['']]]));
+    const client = new FakeClient(receiptJson);
+    const svc = new GeminiExtractionService(client, scanned, registry);
+    await svc.extract(typedSeg, 'u1');
+    expect(client.requests[0]?.images).toHaveLength(1); // vision path
+  });
 });

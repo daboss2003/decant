@@ -6,6 +6,7 @@ import {
   DocumentPipeline,
   RuleValidationService,
   HeuristicConfidenceService,
+  SelfConsistencyExtractionService,
   ThresholdRoutingService,
   registry,
   KNOWN_DOC_TYPES,
@@ -82,13 +83,17 @@ export function buildPipeline(
   apiKey: string,
   store: PageImageStore,
   calibration?: Calibration | CalibrationSet,
-  opts: { ocr?: boolean } = {},
+  opts: { ocr?: boolean; samples?: number } = {},
 ): DocumentPipeline {
   const client = new GoogleGenAIClient(apiKey);
+  const samples = Math.max(1, opts.samples ?? 1);
+  // N-sample self-consistency needs stochastic sampling (temperature > 0) to vary.
+  const geminiExtraction = new GeminiExtractionService(client, store, registry, samples > 1 ? { temperature: 0.4 } : {});
+  const extraction = samples > 1 ? new SelfConsistencyExtractionService(geminiExtraction, samples) : geminiExtraction;
   return new DocumentPipeline(
     {
       classify: new GeminiClassifyService(client, store, { knownTypes: [...KNOWN_DOC_TYPES] }),
-      extraction: new GeminiExtractionService(client, store, registry),
+      extraction,
       validation: new RuleValidationService(registry),
       confidence: new HeuristicConfidenceService({ calibration }),
       routing: new ThresholdRoutingService(),

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as mupdf from 'mupdf';
+import { isTextFormat, loadDocumentText, renderTextPreview } from './doc-text';
 
 export const isPdf = (path: string): boolean => path.toLowerCase().endsWith('.pdf');
 
@@ -40,4 +41,54 @@ export async function toPageImages(paths: string[]): Promise<string[]> {
     else out.push(p);
   }
   return out;
+}
+
+/** Extract the born-digital TEXT layer of each PDF page (mupdf, NO AI/OCR). Empty for scanned pages. */
+export async function extractPdfText(pdfPath: string): Promise<string[]> {
+  const doc = mupdf.Document.openDocument(new Uint8Array(await readFile(pdfPath)), 'application/pdf');
+  try {
+    const out: string[] = [];
+    for (let i = 0; i < doc.countPages(); i++) {
+      out.push(doc.loadPage(i).toStructuredText('preserve-whitespace').asText());
+    }
+    return out;
+  } finally {
+    doc.destroy();
+  }
+}
+
+/**
+ * Expand inputs into aligned per-page IMAGES + TEXT. PDFs are rasterized (for
+ * classify + scanned fallback) AND have their text layer extracted; plain images
+ * carry no text. The extraction service then reads exact text for born-digital
+ * pages and only falls back to the vision model for scanned/image pages.
+ */
+export async function toPages(paths: string[]): Promise<{ images: string[]; texts: string[] }> {
+  const images: string[] = [];
+  const texts: string[] = [];
+  let dir: string | undefined;
+  const tmp = (name: string): string => (dir ??= mkdtempSync(join(tmpdir(), 'decant-ingest-'))) && join(dir, name);
+
+  for (let n = 0; n < paths.length; n++) {
+    const p = paths[n]!;
+    if (isPdf(p)) {
+      const [imgs, txts] = await Promise.all([rasterizePdf(p), extractPdfText(p)]);
+      imgs.forEach((img, i) => {
+        images.push(img);
+        texts.push(txts[i] ?? '');
+      });
+    } else if (isTextFormat(p)) {
+      // Born-digital text format (md/html/xml/svg/txt/csv/…): read the exact text
+      // (no AI), render a preview PNG so classify still has an image.
+      const text = (await loadDocumentText(p)) ?? '';
+      const png = tmp(`text-${n}.png`);
+      writeFileSync(png, await renderTextPreview(text));
+      images.push(png);
+      texts.push(text);
+    } else {
+      images.push(p);
+      texts.push(''); // a raster image has no text layer → vision/OCR path
+    }
+  }
+  return { images, texts };
 }

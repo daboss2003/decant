@@ -14,8 +14,12 @@ const mimeOf = (path: string): string => MIME[extname(path).toLowerCase()] ?? 'a
 
 /** Node fs-backed PageImageStore — the real-world adapter the pure packages left abstract. */
 export class FsPageImageStore implements PageImageStore {
-  /** uploadId → ordered absolute file paths (page 0, 1, 2, …). */
-  constructor(private readonly uploads: Map<string, string[]> = new Map()) {}
+  constructor(
+    /** uploadId → ordered absolute page-image paths (page 0, 1, 2, …). */
+    private readonly uploads: Map<string, string[]> = new Map(),
+    /** uploadId → ordered per-page born-digital text ('' where none). */
+    private readonly texts: Map<string, string[]> = new Map(),
+  ) {}
 
   async loadByRef(ref: string): Promise<LoadedImage> {
     const buf = await readFile(ref);
@@ -31,5 +35,10 @@ export class FsPageImageStore implements PageImageStore {
         return this.loadByRef(p);
       }),
     );
+  }
+
+  async loadText(uploadId: string, pageIndices: number[]): Promise<string[]> {
+    const t = this.texts.get(uploadId) ?? [];
+    return pageIndices.map((i) => t[i] ?? '');
   }
 }
