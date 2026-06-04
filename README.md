@@ -32,9 +32,16 @@ A document classifies to a **registered type** (receipt/invoice, bank statement,
 | `packages/db` | Prisma + SQLite persistence + the audit-trail-writing `ReviewService` |
 | `packages/eval` | Gold scoring + success metrics (field accuracy, reliability/ECE/Brier, safe-failure rate, threshold sweep) |
 | `apps/cli` | Run extraction / eval against real Gemini; PDF rasterization (mupdf) + born-digital text-layer extraction |
+| `apps/api` | NestJS **REST adapter** — results / review-queue / corrections over the same core + db (optional bearer auth) |
 | `apps/web` | Next.js human-in-the-loop review UI |
 
-**Design principle (plan §8): one domain core, many thin adapters.** The CLI, the web app, and (next) the MCP server are all thin adapters over `packages/core` + `packages/db` — so a correction made via the web UI or MCP elicitation writes the *identical* audit event.
+**Design principle (plan §8): one domain core, many thin adapters.** The CLI, the web app, the MCP server, and the **NestJS REST API** are all thin adapters over `packages/core` + `packages/db` — so a correction made via the web UI, MCP elicitation, or `POST /documents/:id/corrections` writes the *identical* audit event (proven by `apps/api/src/api.e2e.test.ts`).
+
+```bash
+# REST API (NestJS) — results / review-queue / corrections over the same core + db
+PORT=3001 pnpm --filter @decant/api run start        # optional: API_AUTH_TOKEN=… for bearer auth
+#   GET /review-queue · GET /documents/:id · GET /documents/:id/audit · POST /documents/:id/corrections
+```
 
 ## Quick start
 
@@ -149,9 +156,9 @@ Enrichment is **best-effort** (an unreachable server never sinks an extraction);
 
 ## Status
 
-**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, the **async-pipeline seam** (in-process default + BullMQ/Redis adapter), and a **real-document gold loader** (`eval --gold-dir`) for scoring redacted real docs alongside the synthetic set.
+**Done & verified:** the trust loop end-to-end (receipts/invoices + bank statements + CAC company-registration docs), persistence + audit trail, the eval harness + a **generated multi-type gold set** (per-type renderers + image degradation) with a **resilient Gemini client** (retry/backoff, per-day-quota fast-fail), **calibration (measure → fit per-doc-type → applied in live routing)**, the review UI with **OCR-aligned bbox provenance** (each value boxed on the scan, fuzzy-matched to Tesseract tokens — so it survives OCR noise), the **MCP server** over stdio **and bearer-guarded HTTP** (elicitation-based review, security-reviewed), the **MCP client role** with both deterministic demo servers (default) and **opt-in real adapters** (open.er-api.com FX + GLEIF registry), **multi-format ingestion** (images + **PDF via mupdf**, with born-digital **text-layer extraction** that skips OCR/vision), **N-sample self-consistency** confidence, the **async-pipeline seam** (in-process default + BullMQ/Redis adapter), a **real-document gold loader** (`eval --gold-dir`), and a **NestJS REST API** (results / review-queue / corrections, optional bearer auth, e2e-tested).
 
-**Roadmap:** run the full per-type reliability diagram (needs a Gemini key beyond the free tier's 20 flash/day; the real-document gold loader is shipped — what's left is sourcing a larger labeled redacted corpus) · an official CAC (RC-number → name) registry adapter when a credentialed API is available.
+**Roadmap:** REST API `POST /uploads` (multipart → ingest → enqueue; needs the ingestion shared into a package) · web upload UI + auth + multi-page review · CI (typecheck/test) + Dockerfile/compose (Redis + Postgres) · the full per-type reliability diagram (Gemini key beyond the free-tier 20 flash/day + a larger redacted corpus) · an official CAC registry adapter when a credentialed API exists.
 
 > The sidecar fits a **global default + per-doc-type** calibrators (`{ default, byType }`); the `ConfidenceService` loads `calibration.json` (via `DECANT_CALIBRATION` or `reports/eval/calibration.json`) and routing uses the calibrator matching each document's type (falling back to the default, then to raw scores). The full design lives in `plan.md`.
 
