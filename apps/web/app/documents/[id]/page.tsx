@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import type { Enrichment } from '@decant/core';
+import type { Enrichment, FieldProvenance } from '@decant/core';
 import { prisma } from '../../../lib/db';
 import { FieldReviewForm } from './field-review-form';
 import { PageViewer, type ViewerBox, type ViewerPage } from './page-viewer';
@@ -13,12 +13,11 @@ function asEnrichments(v: unknown): Enrichment[] {
   return Array.isArray(v) ? (v as Enrichment[]) : [];
 }
 
-type Provenance = { pageIndex: number; bbox: { x: number; y: number; w: number; h: number } };
-
-/** Narrow the Json `provenance` column to a usable bbox (or null). */
-function asProvenance(v: unknown): Provenance | null {
+/** Narrow the Json `provenance` column to a usable bbox (or null). The stored
+ * shape is core's FieldProvenance (the OCR-aligned result, non-null bbox). */
+function asProvenance(v: unknown): FieldProvenance | null {
   if (v && typeof v === 'object' && 'bbox' in v) {
-    const p = v as Provenance;
+    const p = v as FieldProvenance;
     if (p.bbox && typeof p.bbox.x === 'number' && typeof p.bbox.w === 'number') return p;
   }
   return null;
@@ -81,7 +80,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
   // Fields we can point to on the scan, numbered so each box matches its row.
   const located = doc.fields
     .map((f) => ({ f, prov: asProvenance(f.provenance) }))
-    .filter((x): x is { f: (typeof doc.fields)[number]; prov: Provenance } => x.prov !== null);
+    .filter((x): x is { f: (typeof doc.fields)[number]; prov: FieldProvenance } => x.prov !== null);
   const numberOf = new Map(located.map((x, i) => [x.f.id, i + 1]));
 
   // Per-page image refs (multi-page) + the boxes to overlay, for the paged viewer.

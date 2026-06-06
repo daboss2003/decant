@@ -2,17 +2,12 @@
 
 import { useState, type FormEvent } from 'react';
 import Link from 'next/link';
+import type { JobState } from '@decant/core';
 
 // Talks directly to the open (rate-limited, no-auth) REST API. If the API is run
 // with API_AUTH_TOKEN set, browser uploads would 401 — front it with a same-origin
 // server route that injects the bearer instead of exposing this page to the token.
 const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-
-interface JobState {
-  status: string;
-  documentId?: string;
-  error?: string;
-}
 
 export default function UploadPage() {
   const [status, setStatus] = useState('');

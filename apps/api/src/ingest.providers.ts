@@ -7,6 +7,7 @@ import {
   KNOWN_DOC_TYPES,
   type IngestJob,
   type JobQueue,
+  type JobState,
   type PipelineResult,
 } from '@decant/core';
 import { createQueue } from '@decant/queue';
@@ -30,11 +31,6 @@ const uploadsDir = (): string => process.env.UPLOADS_DIR ?? resolve(process.cwd(
 
 export const JOB_TRACKER = Symbol('JOB_TRACKER');
 export const INGEST_QUEUE = Symbol('INGEST_QUEUE');
-
-export type JobState =
-  | { status: 'queued' | 'processing' }
-  | { status: 'done'; uploadId: string; documentId: string | null }
-  | { status: 'error'; error: string };
 
 /**
  * In-memory job status, keyed by jobId. Process-local: with BullMQ the producer

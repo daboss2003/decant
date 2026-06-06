@@ -12,14 +12,16 @@ import { z } from 'zod';
 export const Confidence = z.number().min(0).max(1);
 export type Confidence = z.infer<typeof Confidence>;
 
+/** Normalized [0,1] bounding box on the page — the one geometric primitive shared
+ * across schemas (this), the core OCR-alignment algorithm, and the review UI. */
+export const Bbox = z.object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() });
+export type Bbox = z.infer<typeof Bbox>;
+
 /** Where a value came from on the page — drives the review-UI overlay + audit. */
 export const Provenance = z.object({
   pageIndex: z.number().int().nonnegative(),
   /** Normalized [0,1] box; null when the value isn't grounded to a region. */
-  bbox: z
-    .object({ x: z.number(), y: z.number(), w: z.number(), h: z.number() })
-    .nullable()
-    .default(null),
+  bbox: Bbox.nullable().default(null),
 });
 export type Provenance = z.infer<typeof Provenance>;
 

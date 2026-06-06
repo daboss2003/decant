@@ -55,3 +55,13 @@ export interface IngestJob {
    */
   tempDirs?: string[];
 }
+
+/**
+ * Lifecycle status of an ingest job — the contract the REST API tracks/returns and
+ * the web upload UI polls. Lives here (next to IngestJob) so both adapters share
+ * one definition instead of re-declaring it.
+ */
+export type JobState =
+  | { status: 'queued' | 'processing' }
+  | { status: 'done'; uploadId: string; documentId: string | null }
+  | { status: 'error'; error: string };

@@ -4,13 +4,8 @@
  * OCR word tokens. This file is the pure alignment algorithm; the OCR source is
  * an injected `OcrProvider` (see services.ts).
  */
-export interface Bbox {
-  /** Normalized [0,1] relative to the page. */
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
+import type { Bbox } from '@decant/schemas';
+export type { Bbox }; // re-export so `@decant/core`'s public surface is unchanged
 
 export interface OcrToken {
   pageIndex: number;
