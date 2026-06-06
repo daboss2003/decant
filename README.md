@@ -21,19 +21,24 @@ A document classifies to a **registered type** (receipt/invoice, bank statement,
 
 ## Packages
 
+Every package and app has its own `README.md` — follow the link for its exact API, usage, and gotchas.
+
 | Package | What it is |
 |---|---|
-| `packages/schemas` | Zod single source of truth (drives Gemini structured output, validation, types, MCP/elicitation) |
-| `packages/core` | Transport-agnostic domain core: registry, segmentation, rules, confidence, routing, the pipeline orchestrator |
-| `packages/gemini` | `@google/genai`-backed Classify + Extract services (the SDK behind a mockable interface) |
-| `packages/ocr` | tesseract.js `OcrProvider` → per-field bbox provenance (fuzzy-aligned to each value, independent of the model's claim) |
-| `packages/enrich` | the **MCP client role** + a **pluggable verification adapter** (`makeVerifier` — add a source by implementing one `lookup`); FX enrichment + company-registry verification, with bundled demo and real (open.er-api/GLEIF) servers |
-| `packages/queue` | the async-pipeline seam: a `JobQueue` with an in-process default (dev) + a Redis/BullMQ adapter (retries/backoff/concurrency), picked by `REDIS_URL` |
-| `packages/db` | Prisma + SQLite persistence + the audit-trail-writing `ReviewService` |
-| `packages/eval` | Gold scoring + success metrics (field accuracy, reliability/ECE/Brier, safe-failure rate, threshold sweep) |
-| `apps/cli` | Run extraction / eval against real Gemini; PDF rasterization (mupdf) + born-digital text-layer extraction |
-| `apps/api` | NestJS **REST adapter** — results / review-queue / corrections over the same core + db (optional bearer auth) |
-| `apps/web` | Next.js human-in-the-loop review UI |
+| [`packages/schemas`](packages/schemas/README.md) | Zod single source of truth (drives Gemini structured output, validation, types, MCP/elicitation) |
+| [`packages/core`](packages/core/README.md) | Transport-agnostic domain core: registry, segmentation, rules, confidence, routing, the pipeline orchestrator |
+| [`packages/gemini`](packages/gemini/README.md) | `@google/genai`-backed Classify + Extract services (the SDK behind a mockable interface) |
+| [`packages/ocr`](packages/ocr/README.md) | tesseract.js `OcrProvider` → per-field bbox provenance (fuzzy-aligned to each value, independent of the model's claim) |
+| [`packages/enrich`](packages/enrich/README.md) | the **MCP client role** + a **pluggable verification adapter** (`makeVerifier` — add a source by implementing one `lookup`); FX enrichment + company-registry verification, with bundled demo and real (open.er-api/GLEIF) servers |
+| [`packages/ingest`](packages/ingest/README.md) | Multi-format ingestion: `toPages` (PDF rasterize + text layer via mupdf; md/html/xml/svg/… read as exact text), `persistPageImages`, `FsPageImageStore` |
+| [`packages/queue`](packages/queue/README.md) | the async-pipeline seam: a `JobQueue` with an in-process default (dev) + a Redis/BullMQ adapter (retries/backoff/concurrency), picked by `REDIS_URL` |
+| [`packages/db`](packages/db/README.md) | Prisma + SQLite persistence, the audit-trail-writing `ReviewService`, and the runtime calibrator loader (`loadCalibration`) |
+| [`packages/eval`](packages/eval/README.md) | Offline gold scoring + success metrics (field accuracy, reliability/ECE/Brier, safe-failure rate, threshold sweep) — not a runtime dependency |
+| [`packages/calibrate`](packages/calibrate/README.md) | Python offline sidecar (scikit-learn): fits Platt/isotonic calibrators from eval results; never on the request path |
+| [`apps/cli`](apps/cli/README.md) | Run extraction / eval against real Gemini; PDF rasterization (mupdf) + born-digital text-layer extraction |
+| [`apps/api`](apps/api/README.md) | NestJS **REST adapter** — results / review-queue / corrections + async `POST /uploads` over the same core + db (rate-limited; optional bearer auth) |
+| [`apps/mcp`](apps/mcp/README.md) | **MCP server adapter** (stdio + bearer-guarded HTTP) — tools/resources with elicitation-as-review |
+| [`apps/web`](apps/web/README.md) | Next.js human-in-the-loop review UI (review queue, multi-page scan + bbox overlays, upload, optional login) |
 
 **Design principle (plan §8): one domain core, many thin adapters.** The CLI, the web app, the MCP server, and the **NestJS REST API** are all thin adapters over `packages/core` + `packages/db` — so a correction made via the web UI, MCP elicitation, or `POST /documents/:id/corrections` writes the *identical* audit event (proven by `apps/api/src/api.e2e.test.ts`).
 
@@ -50,7 +55,7 @@ pnpm install
 pnpm --filter @decant/db run db:generate && pnpm --filter @decant/db run db:push
 echo 'GEMINI_API_KEY=...' > packages/gemini/.env   # for the live demos
 
-pnpm test          # 59 unit/integration tests
+pnpm test          # 152 unit/integration tests
 pnpm run typecheck # all packages
 ```
 
