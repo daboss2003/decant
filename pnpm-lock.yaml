@@ -23,9 +23,6 @@ importers:
       '@decant/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@decant/eval':
-        specifier: workspace:*
-        version: link:../../packages/eval
       '@decant/gemini':
         specifier: workspace:*
         version: link:../../packages/gemini
@@ -112,9 +109,6 @@ importers:
       '@decant/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@decant/eval':
-        specifier: workspace:*
-        version: link:../../packages/eval
       '@decant/gemini':
         specifier: workspace:*
         version: link:../../packages/gemini
@@ -227,10 +221,6 @@ importers:
       '@decant/core':
         specifier: workspace:*
         version: link:../core
-    devDependencies:
-      '@types/node':
-        specifier: ^25.9.1
-        version: 25.9.1
 
   packages/gemini:
     dependencies:

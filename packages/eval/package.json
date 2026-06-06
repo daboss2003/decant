@@ -9,8 +9,5 @@
   },
   "dependencies": {
     "@decant/core": "workspace:*"
-  },
-  "devDependencies": {
-    "@types/node": "^25.9.1"
   }
 }

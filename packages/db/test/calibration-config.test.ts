@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, afterAll } from 'vitest';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadCalibration } from '../src/calibration-loader';
+import { loadCalibration } from '../src/calibration-config';
 
 const dir = mkdtempSync(join(tmpdir(), 'decant-cal-'));
 afterEach(() => {

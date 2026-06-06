@@ -3,9 +3,14 @@ import { resolve } from 'node:path';
 import type { Calibration, CalibrationSet } from '@decant/core';
 
 /**
- * Load a fitted calibrator (the offline Python sidecar's `calibration.json`) so a
- * runtime adapter maps raw confidence → calibrated probability. Shared by every
- * adapter (CLI, REST API, MCP) so calibrated routing is identical everywhere.
+ * Runtime loader for the offline-fitted calibrator (the Python sidecar's
+ * `calibration.json`) so a prod adapter maps raw confidence → calibrated
+ * probability. Shared by every runtime adapter (CLI, REST API, MCP).
+ *
+ * Lives in `@decant/db` — the shared runtime-IO package every adapter already
+ * depends on — deliberately: `@decant/core` is node-free (no fs), and the eval
+ * harness (`@decant/eval`, which *produces* calibrators) is offline-only tooling
+ * that production code must not import.
  *
  * Resolution order:
  *   1. `DECANT_CALIBRATION` — an explicit path (use this in prod / split deploys);

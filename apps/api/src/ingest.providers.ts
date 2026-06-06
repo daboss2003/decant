@@ -16,8 +16,7 @@ import { rmSync } from 'node:fs';
 import { Logger } from '@nestjs/common';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService } from '@decant/gemini';
 import { FsPageImageStore, persistPageImages } from '@decant/ingest';
-import { loadCalibration } from '@decant/eval';
-import { savePipelineResult, type PrismaClient } from '@decant/db';
+import { savePipelineResult, loadCalibration, type PrismaClient } from '@decant/db';
 import { PRISMA } from './db.providers';
 
 const logger = new Logger('IngestJob');

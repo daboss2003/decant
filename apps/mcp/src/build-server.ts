@@ -17,8 +17,7 @@ import {
   type PageImageStore,
   type LoadedImage,
 } from '@decant/gemini';
-import { loadCalibration } from '@decant/eval';
-import { PrismaReviewService, type PrismaClient } from '@decant/db';
+import { PrismaReviewService, loadCalibration, type PrismaClient } from '@decant/db';
 
 // Fitted calibrator (same artifact the CLI/API use) so extract_document routes on
 // calibrated probabilities, not raw scores. Absent → raw scores. Loaded once.

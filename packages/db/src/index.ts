@@ -2,3 +2,4 @@
 export * from './client';
 export * from './repository';
 export * from './review.service';
+export * from './calibration-config';

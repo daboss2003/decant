@@ -61,9 +61,10 @@ export function requireApiKey(): string {
   return key;
 }
 
-// Calibrator loading lives in @decant/eval so the REST API + MCP adapters share
-// the exact same resolution (calibrated routing is identical everywhere).
-export { loadCalibration } from '@decant/eval';
+// Calibrator loading lives in @decant/db (the shared runtime-IO package) so the
+// REST API + MCP adapters share the exact same resolution — and the offline-only
+// @decant/eval harness stays out of the production import graph.
+export { loadCalibration } from '@decant/db';
 
 /**
  * Wire the real Gemini-backed pipeline over a given image store (plan §8 adapters).
