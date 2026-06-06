@@ -17,7 +17,12 @@ import {
   type PageImageStore,
   type LoadedImage,
 } from '@decant/gemini';
+import { loadCalibration } from '@decant/eval';
 import { PrismaReviewService, type PrismaClient } from '@decant/db';
+
+// Fitted calibrator (same artifact the CLI/API use) so extract_document routes on
+// calibrated probabilities, not raw scores. Absent → raw scores. Loaded once.
+const calibration = loadCalibration();
 
 /**
  * Builds the Decant MCP server (plan §8) — a thin adapter over the SAME domain
@@ -172,7 +177,7 @@ export function createDecantMcp(prisma: PrismaClient): McpServer {
           classify: new GeminiClassifyService(client, store, { knownTypes: [...KNOWN_DOC_TYPES] }),
           extraction: new GeminiExtractionService(client, store, registry),
           validation: new RuleValidationService(registry),
-          confidence: new HeuristicConfidenceService(),
+          confidence: new HeuristicConfidenceService({ calibration }),
           routing: new ThresholdRoutingService(),
         },
         { knownTypes: KNOWN_DOC_TYPES, minClassifyConfidence: 0.5 },

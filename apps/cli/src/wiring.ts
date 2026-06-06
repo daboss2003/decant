@@ -61,19 +61,9 @@ export function requireApiKey(): string {
   return key;
 }
 
-/**
- * Load a fitted calibrator if one exists (from `DECANT_CALIBRATION` or the
- * default sidecar output), else undefined → the pipeline uses raw scores.
- */
-export function loadCalibration(): Calibration | CalibrationSet | undefined {
-  const path = process.env.DECANT_CALIBRATION ?? resolve(process.cwd(), '../../reports/eval/calibration.json');
-  if (!existsSync(path)) return undefined;
-  try {
-    return JSON.parse(readFileSync(path, 'utf8')) as Calibration | CalibrationSet;
-  } catch {
-    return undefined;
-  }
-}
+// Calibrator loading lives in @decant/eval so the REST API + MCP adapters share
+// the exact same resolution (calibrated routing is identical everywhere).
+export { loadCalibration } from '@decant/eval';
 
 /**
  * Wire the real Gemini-backed pipeline over a given image store (plan §8 adapters).

@@ -15,10 +15,15 @@ import { rmSync } from 'node:fs';
 import { Logger } from '@nestjs/common';
 import { GoogleGenAIClient, GeminiClassifyService, GeminiExtractionService } from '@decant/gemini';
 import { FsPageImageStore, persistPageImages } from '@decant/ingest';
+import { loadCalibration } from '@decant/eval';
 import { savePipelineResult, type PrismaClient } from '@decant/db';
 import { PRISMA } from './db.providers';
 
 const logger = new Logger('IngestJob');
+
+// Load the fitted calibrator once at boot (the same artifact the CLI uses) so REST
+// uploads route on calibrated probabilities, not raw scores. Absent → raw scores.
+const calibration = loadCalibration();
 
 /** Web-served uploads dir (configurable for split deploys; defaults to the web app's public dir). */
 const uploadsDir = (): string => process.env.UPLOADS_DIR ?? resolve(process.cwd(), '../../apps/web/public/uploads');
@@ -51,7 +56,7 @@ async function runPipeline(job: IngestJob): Promise<PipelineResult> {
       classify: new GeminiClassifyService(client, store, { knownTypes: [...KNOWN_DOC_TYPES] }),
       extraction: new GeminiExtractionService(client, store, registry),
       validation: new RuleValidationService(registry),
-      confidence: new HeuristicConfidenceService(),
+      confidence: new HeuristicConfidenceService({ calibration }),
       routing: new ThresholdRoutingService(),
     },
     { knownTypes: KNOWN_DOC_TYPES, minClassifyConfidence: 0.5 },
